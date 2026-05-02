@@ -75,7 +75,13 @@
     "layoutGraph": "Graph",
     "layoutSplit": "Split",
     "layoutWorkbench": "Workbench",
-    "stepNames": ["Graph Build", "Env Setup", "Run Simulation", "Report Generation", "Deep Interaction"]
+    "stepNames": [
+      "Graph Build",
+      "Env Setup",
+      "Run Simulation",
+      "Report Generation",
+      "Deep Interaction"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Ontology Generation",
@@ -661,5 +667,73 @@
     "llmSelectAgentFailed": "LLM agent selection failed, using default selection: {error}",
     "generateInterviewQuestionsFailed": "Failed to generate interview questions: {error}",
     "generateInterviewSummaryFailed": "Failed to generate interview summary: {error}"
+  },
+  "episode": {
+    "actor_prefix": "{actor}: {description}",
+    "create_post": {
+      "with_content": "posted: \"{content}\"",
+      "no_content": "posted"
+    },
+    "like_post": {
+      "with_author_content": "liked {author}'s post: \"{content}\"",
+      "with_content_only": "liked a post: \"{content}\"",
+      "with_author_only": "liked a post by {author}",
+      "fallback": "liked a post"
+    },
+    "dislike_post": {
+      "with_author_content": "disliked {author}'s post: \"{content}\"",
+      "with_content_only": "disliked a post: \"{content}\"",
+      "with_author_only": "disliked a post by {author}",
+      "fallback": "disliked a post"
+    },
+    "repost": {
+      "with_author_content": "reposted {author}'s post: \"{content}\"",
+      "with_content_only": "reposted a post: \"{content}\"",
+      "with_author_only": "reposted a post by {author}",
+      "fallback": "reposted a post"
+    },
+    "quote_post": {
+      "with_author_content": "quoted {author}'s post \"{content}\"",
+      "with_content_only": "quoted a post \"{content}\"",
+      "with_author_only": "quoted a post by {author}",
+      "fallback": "quoted a post",
+      "suffix_with_comment": ", commenting: \"{comment}\""
+    },
+    "follow": {
+      "with_target": "followed user \"{target}\"",
+      "no_target": "followed a user"
+    },
+    "create_comment": {
+      "with_content_author_post": "commented on {author}'s post \"{post}\": \"{content}\"",
+      "with_content_post": "commented on post \"{post}\": \"{content}\"",
+      "with_content_author": "commented on {author}'s post: \"{content}\"",
+      "with_content_only": "commented: \"{content}\"",
+      "fallback": "posted a comment"
+    },
+    "like_comment": {
+      "with_author_content": "liked {author}'s comment: \"{content}\"",
+      "with_content_only": "liked a comment: \"{content}\"",
+      "with_author_only": "liked a comment by {author}",
+      "fallback": "liked a comment"
+    },
+    "dislike_comment": {
+      "with_author_content": "disliked {author}'s comment: \"{content}\"",
+      "with_content_only": "disliked a comment: \"{content}\"",
+      "with_author_only": "disliked a comment by {author}",
+      "fallback": "disliked a comment"
+    },
+    "search": {
+      "with_query": "searched for \"{query}\"",
+      "no_query": "performed a search"
+    },
+    "search_user": {
+      "with_query": "searched for user \"{query}\"",
+      "no_query": "searched for a user"
+    },
+    "mute": {
+      "with_target": "muted user \"{target}\"",
+      "no_target": "muted a user"
+    },
+    "generic": "performed action {action_type}"
   }
 }

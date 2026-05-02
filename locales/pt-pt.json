@@ -75,7 +75,13 @@
     "layoutGraph": "Grafo",
     "layoutSplit": "Dividido",
     "layoutWorkbench": "Bancada",
-    "stepNames": ["Construção do Grafo", "Configuração do Ambiente", "Executar Simulação", "Geração do Relatório", "Interação Profunda"]
+    "stepNames": [
+      "Construção do Grafo",
+      "Configuração do Ambiente",
+      "Executar Simulação",
+      "Geração do Relatório",
+      "Interação Profunda"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Geração de Ontologia",
@@ -661,5 +667,73 @@
     "llmSelectAgentFailed": "Seleção de agente pelo LLM falhou, a utilizar seleção predefinida: {error}",
     "generateInterviewQuestionsFailed": "Falha ao gerar perguntas de entrevista: {error}",
     "generateInterviewSummaryFailed": "Falha ao gerar resumo da entrevista: {error}"
+  },
+  "episode": {
+    "actor_prefix": "{actor}: {description}",
+    "create_post": {
+      "with_content": "publicou uma publicação: «{content}»",
+      "no_content": "publicou uma publicação"
+    },
+    "like_post": {
+      "with_author_content": "gostou da publicação de {author}: «{content}»",
+      "with_content_only": "gostou de uma publicação: «{content}»",
+      "with_author_only": "gostou de uma publicação de {author}",
+      "fallback": "gostou de uma publicação"
+    },
+    "dislike_post": {
+      "with_author_content": "não gostou da publicação de {author}: «{content}»",
+      "with_content_only": "não gostou de uma publicação: «{content}»",
+      "with_author_only": "não gostou de uma publicação de {author}",
+      "fallback": "não gostou de uma publicação"
+    },
+    "repost": {
+      "with_author_content": "partilhou a publicação de {author}: «{content}»",
+      "with_content_only": "partilhou uma publicação: «{content}»",
+      "with_author_only": "partilhou uma publicação de {author}",
+      "fallback": "partilhou uma publicação"
+    },
+    "quote_post": {
+      "with_author_content": "citou a publicação de {author} «{content}»",
+      "with_content_only": "citou uma publicação «{content}»",
+      "with_author_only": "citou uma publicação de {author}",
+      "fallback": "citou uma publicação",
+      "suffix_with_comment": ", comentando: «{comment}»"
+    },
+    "follow": {
+      "with_target": "começou a seguir «{target}»",
+      "no_target": "começou a seguir um utilizador"
+    },
+    "create_comment": {
+      "with_content_author_post": "comentou na publicação de {author} «{post}»: «{content}»",
+      "with_content_post": "comentou na publicação «{post}»: «{content}»",
+      "with_content_author": "comentou na publicação de {author}: «{content}»",
+      "with_content_only": "comentou: «{content}»",
+      "fallback": "publicou um comentário"
+    },
+    "like_comment": {
+      "with_author_content": "gostou do comentário de {author}: «{content}»",
+      "with_content_only": "gostou de um comentário: «{content}»",
+      "with_author_only": "gostou de um comentário de {author}",
+      "fallback": "gostou de um comentário"
+    },
+    "dislike_comment": {
+      "with_author_content": "não gostou do comentário de {author}: «{content}»",
+      "with_content_only": "não gostou de um comentário: «{content}»",
+      "with_author_only": "não gostou de um comentário de {author}",
+      "fallback": "não gostou de um comentário"
+    },
+    "search": {
+      "with_query": "pesquisou «{query}»",
+      "no_query": "fez uma pesquisa"
+    },
+    "search_user": {
+      "with_query": "pesquisou pelo utilizador «{query}»",
+      "no_query": "pesquisou por um utilizador"
+    },
+    "mute": {
+      "with_target": "silenciou o utilizador «{target}»",
+      "no_target": "silenciou um utilizador"
+    },
+    "generic": "realizou a ação {action_type}"
   }
 }

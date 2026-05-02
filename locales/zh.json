@@ -75,7 +75,13 @@
     "layoutGraph": "图谱",
     "layoutSplit": "双栏",
     "layoutWorkbench": "工作台",
-    "stepNames": ["图谱构建", "环境搭建", "开始模拟", "报告生成", "深度互动"]
+    "stepNames": [
+      "图谱构建",
+      "环境搭建",
+      "开始模拟",
+      "报告生成",
+      "深度互动"
+    ]
   },
   "step1": {
     "ontologyGeneration": "本体生成",
@@ -661,5 +667,73 @@
     "llmSelectAgentFailed": "LLM选择Agent失败，使用默认选择: {error}",
     "generateInterviewQuestionsFailed": "生成采访问题失败: {error}",
     "generateInterviewSummaryFailed": "生成采访摘要失败: {error}"
+  },
+  "episode": {
+    "actor_prefix": "{actor}: {description}",
+    "create_post": {
+      "with_content": "发布了一条帖子：「{content}」",
+      "no_content": "发布了一条帖子"
+    },
+    "like_post": {
+      "with_author_content": "点赞了{author}的帖子：「{content}」",
+      "with_content_only": "点赞了一条帖子：「{content}」",
+      "with_author_only": "点赞了{author}的一条帖子",
+      "fallback": "点赞了一条帖子"
+    },
+    "dislike_post": {
+      "with_author_content": "踩了{author}的帖子：「{content}」",
+      "with_content_only": "踩了一条帖子：「{content}」",
+      "with_author_only": "踩了{author}的一条帖子",
+      "fallback": "踩了一条帖子"
+    },
+    "repost": {
+      "with_author_content": "转发了{author}的帖子：「{content}」",
+      "with_content_only": "转发了一条帖子：「{content}」",
+      "with_author_only": "转发了{author}的一条帖子",
+      "fallback": "转发了一条帖子"
+    },
+    "quote_post": {
+      "with_author_content": "引用了{author}的帖子「{content}」",
+      "with_content_only": "引用了一条帖子「{content}」",
+      "with_author_only": "引用了{author}的一条帖子",
+      "fallback": "引用了一条帖子",
+      "suffix_with_comment": "，并评论道：「{comment}」"
+    },
+    "follow": {
+      "with_target": "关注了用户「{target}」",
+      "no_target": "关注了一个用户"
+    },
+    "create_comment": {
+      "with_content_author_post": "在{author}的帖子「{post}」下评论道：「{content}」",
+      "with_content_post": "在帖子「{post}」下评论道：「{content}」",
+      "with_content_author": "在{author}的帖子下评论道：「{content}」",
+      "with_content_only": "评论道：「{content}」",
+      "fallback": "发表了评论"
+    },
+    "like_comment": {
+      "with_author_content": "点赞了{author}的评论：「{content}」",
+      "with_content_only": "点赞了一条评论：「{content}」",
+      "with_author_only": "点赞了{author}的一条评论",
+      "fallback": "点赞了一条评论"
+    },
+    "dislike_comment": {
+      "with_author_content": "踩了{author}的评论：「{content}」",
+      "with_content_only": "踩了一条评论：「{content}」",
+      "with_author_only": "踩了{author}的一条评论",
+      "fallback": "踩了一条评论"
+    },
+    "search": {
+      "with_query": "搜索了「{query}」",
+      "no_query": "进行了搜索"
+    },
+    "search_user": {
+      "with_query": "搜索了用户「{query}」",
+      "no_query": "搜索了用户"
+    },
+    "mute": {
+      "with_target": "屏蔽了用户「{target}」",
+      "no_target": "屏蔽了一个用户"
+    },
+    "generic": "执行了{action_type}操作"
   }
 }
