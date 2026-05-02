@@ -18,7 +18,7 @@ When to consider `graphiti`:
 When `zep` is the right call:
 
 - One simulation/month or less — Zep Free tier (1k credits/mo) covers it for $0.
-- No appetite for operating a Neo4j container or Ollama on the host.
+- No appetite for operating a Neo4j container on the host.
 
 ## Stack we ship in `graphiti` mode
 
@@ -28,7 +28,7 @@ Single paid vendor (Anthropic). Everything else is local:
 |---|---|---|
 | Knowledge graph DB | Neo4j 5 Community in Docker | only Graphiti-supported DB that's GPLv3 + free |
 | LLM (extraction) | **Anthropic Claude Sonnet 4.6** via `AnthropicClient` | testado em PT-BR, captura relações implícitas (ex: `REPRESENTS_CONTINUITY_OF`, `GOVERNS`) que modelos "mini" perdem |
-| Embeddings | **Ollama BGE-M3 local** via HTTP | top-tier multilingual em PT (MTEB-PT). 100% local, zero $/mês, zero `torch` no Python process |
+| Embeddings | **BGE-M3 via sentence-transformers** in-process | top-tier multilingual em PT (MTEB-PT). 100% local, zero $/mês. PyTorch (~500MB) puxado como dep transitiva. |
 | Reranker | **`LLMReranker` reusing the same Sonnet client** | zero ops, ~$1/mês, frequentemente bate cross-encoder genérico em domínio rico |
 
 The only outbound API key the project pays for is Anthropic. The
@@ -82,7 +82,7 @@ hits roughly **60,000 credits** for the 500-agent variant on Zep, and
 Self-host LLM cost is computed against **Anthropic Sonnet 4.6**
 (~$3/1M input, $15/1M output) at the Graphiti pipeline's typical
 4k input + 1.5k output per Episode (~$0.034/episode). Embeddings are
-zero (Ollama local). Reranker adds ~$1/mo total.
+zero (sentence-transformers local). Reranker adds ~$1/mo total.
 
 | Use case | Zep monthly | Graphiti monthly (Sonnet) | Delta |
 |---|---:|---:|---:|
@@ -110,7 +110,7 @@ For deployments that ingest sensitive content, the architecture keeps
 most data on infrastructure the operator controls:
 
 - Knowledge graph (nodes, edges, embeddings): local Neo4j only.
-- Embeddings: local (Ollama or sentence-transformers), never leaves
+- Embeddings: local (sentence-transformers in-process), never leaves
   the host.
 - Episode text: travels to the LLM provider for extraction (the only
   hop out). To eliminate that final hop, see "Fully local" below.
@@ -174,12 +174,13 @@ Graphiti is fully async. The MiroFish backend is sync (Flask + threading).
 `_graphiti_clients.py` is the single place that decides which LLM,
 embedder, and reranker get passed to `Graphiti(...)`. Both adapters
 call the `make_graphiti(uri, user, password)` factory; nothing else
-touches Anthropic/Ollama specifics.
+touches Anthropic / embedder specifics.
 
-- `OllamaEmbedder` — `httpx.AsyncClient` POST to `/api/embed` on the
-  configured Ollama host. Fail-soft: returns zero vectors on error so
-  ingest doesn't crash; the `_local_search` keyword fallback in
-  `graphiti_tools.py` still serves search even if vectors are bad.
+- `SentenceTransformerEmbedder` — loads the configured model via
+  `sentence_transformers` on first call, caches it for the process
+  lifetime. Fail-soft: returns zero vectors on error so ingest doesn't
+  crash; the `_local_search` keyword fallback in `graphiti_tools.py`
+  still serves search even if vectors are bad.
 - `LLMReranker` — wraps the Graphiti LLM client (`AnthropicClient` or
   `OpenAIClient`) and ranks via a JSON prompt. Caps at 50 passages
   per call and 400 chars per passage.
@@ -230,28 +231,23 @@ LLM_JSON_MODE=none           # Anthropic via OpenAI-compat path doesn't support 
 # Graphiti provider switch — leave 'anthropic' for the recommended stack
 GRAPHITI_LLM_PROVIDER=anthropic
 
-# Ollama (embeddings local) — defaults are fine, just need the model pulled
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_EMBED_MODEL=bge-m3
+# Embeddings local — default model is BAAI/bge-m3 (1024-d, top-tier
+# multilingual). The model is downloaded automatically by
+# sentence-transformers on first use (~2GB).
+SENTENCE_TRANSFORMER_MODEL=BAAI/bge-m3
 ```
 
 ```bash
-# 1. Install Ollama on the host (one time)
-#    macOS: brew install ollama && open -a Ollama   (uses Apple Silicon Metal natively)
-#    Linux: curl -fsSL https://ollama.com/install.sh | sh
-
-# 2. Pull the embedding model (~2GB, one time)
-ollama pull bge-m3
-
-# 3. Bring up Neo4j Community
+# 1. Bring up Neo4j Community
 NEO4J_PASSWORD=$(grep ^NEO4J_PASSWORD= .env | cut -d= -f2) \
   docker compose -f backend/docker-compose.neo4j.yml up -d
 
-# 4. Install Python deps
+# 2. Install Python deps (pulls torch + sentence-transformers)
 cd backend
 pip install -r requirements.txt
 
-# 5. Run as usual
+# 3. Run as usual — the BGE-M3 model is downloaded on first request
+#    (~2GB, cached under ~/.cache/huggingface).
 python run.py
 ```
 
@@ -323,9 +319,9 @@ deployments by ~25-30%.
 | File | Purpose |
 |---|---|
 | `backend/docker-compose.neo4j.yml` | Neo4j 5 Community + APOC, persistent volumes |
-| `backend/app/config.py` | `MEMORY_BACKEND`, `NEO4J_URI/USER/PASSWORD`, `OLLAMA_*`, `GRAPHITI_LLM_PROVIDER` |
+| `backend/app/config.py` | `MEMORY_BACKEND`, `NEO4J_URI/USER/PASSWORD`, `SENTENCE_TRANSFORMER_MODEL`, `GRAPHITI_LLM_PROVIDER` |
 | `backend/app/services/_memory_backend.py` | Factory dispatcher (zep vs graphiti) + `AsyncRunner` |
-| `backend/app/services/_graphiti_clients.py` | `OllamaEmbedder`, `LLMReranker`, `make_graphiti()` |
+| `backend/app/services/_graphiti_clients.py` | `SentenceTransformerEmbedder`, `LLMReranker`, `make_graphiti()` |
 | `backend/app/services/graphiti_graph_memory_updater.py` | Ingestion adapter |
 | `backend/app/services/graphiti_tools.py` | Tools / search / orchestrators |
 | `backend/app/services/graphiti_entity_reader.py` | Read-side Cypher |

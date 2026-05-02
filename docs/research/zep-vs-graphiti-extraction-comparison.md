@@ -22,8 +22,7 @@ input fed to both backends with empty graphs.
 
 ### Graphiti stack (this fork's self-hosted backend)
 - LLM: Anthropic Claude **Sonnet 4.6** via `AnthropicClient`.
-- Embeddings: BGE-M3 1024-d via `sentence-transformers` in-process
-  (workaround for Ollama bug on macOS 26.3+; identical model on Ollama).
+- Embeddings: BGE-M3 1024-d via `sentence-transformers` in-process.
 - Reranker: `LLMReranker` reusing the same Anthropic client.
 - Graph DB: Neo4j 5 Community in Docker (default `:Entity` labels — no
   custom EntityType subclasses registered yet).
@@ -111,7 +110,7 @@ times are comparable.
 ## Reproducing
 
 ```bash
-# Bring up Neo4j + Ollama (or use sentence-transformers fallback)
+# Bring up Neo4j (sentence-transformers runs in-process — no extra service)
 docker compose -f backend/docker-compose.neo4j.yml up -d
 
 # Create empty graphs

@@ -50,18 +50,8 @@ class Config:
     NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
 
     # Embeddings local — usado quando MEMORY_BACKEND=graphiti
-    # Provider:
-    #   ollama                 — default; HTTP via Ollama, sem dep Python pesada
-    #   sentence_transformers  — fallback in-process (puxa torch); use se
-    #                            Ollama falhar (ex. macOS 26.3 + Ollama 0.21-0.22
-    #                            tem bug Metal/bfloat no llama runner)
-    EMBED_PROVIDER = os.environ.get('EMBED_PROVIDER', 'ollama').lower()
-
-    # Setup Ollama: `ollama pull bge-m3`
-    OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
-    OLLAMA_EMBED_MODEL = os.environ.get('OLLAMA_EMBED_MODEL', 'bge-m3')
-
-    # Setup sentence-transformers: `pip install sentence-transformers`
+    # Roda em-process via sentence-transformers; o modelo é carregado uma vez
+    # por processo. Default é BAAI/bge-m3 (1024-d, top-tier multilingual).
     SENTENCE_TRANSFORMER_MODEL = os.environ.get(
         'SENTENCE_TRANSFORMER_MODEL', 'BAAI/bge-m3'
     )
@@ -116,11 +106,6 @@ class Config:
                 errors.append(
                     f"GRAPHITI_LLM_PROVIDER 配置无效: '{cls.GRAPHITI_LLM_PROVIDER}' "
                     f"(应为 'anthropic' 或 'openai')"
-                )
-            if cls.EMBED_PROVIDER not in ('ollama', 'sentence_transformers'):
-                errors.append(
-                    f"EMBED_PROVIDER 配置无效: '{cls.EMBED_PROVIDER}' "
-                    f"(应为 'ollama' 或 'sentence_transformers')"
                 )
         else:
             errors.append(

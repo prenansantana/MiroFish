@@ -17,13 +17,13 @@ openai>=1.0.0
 zep-cloud==3.13.0
 
 # ============= Graphiti + Neo4j (backend opcional, MEMORY_BACKEND=graphiti) =============
-# [anthropic] habilita o AnthropicClient nativo do Graphiti (Claude Sonnet/Opus/Haiku).
-# Embeddings local: default Ollama (HTTP), sem dep extra de torch.
-# Para EMBED_PROVIDER=sentence_transformers (fallback Mac/macOS 26.3+):
-# pip install sentence-transformers
+# [anthropic] habilita o AnthropicClient nativo do Graphiti.
+# sentence-transformers fornece o BGE-M3 local para embeddings (puxa torch
+# como dep transitiva ~500MB, mas a maioria dos projetos já tem via
+# anthropic/openai SDKs).
 graphiti-core[anthropic]>=0.29.0
 neo4j>=5.0.0
-httpx>=0.27.0
+sentence-transformers>=3.0.0
 
 # ============= OASIS 社交媒体模拟 =============
 # OASIS 社交模拟框架
