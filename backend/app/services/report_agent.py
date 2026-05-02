@@ -22,10 +22,11 @@ from ..config import Config
 from ..utils.llm_client import LLMClient
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, t
+from ._memory_backend import get_tools_service
 from .zep_tools import (
-    ZepToolsService, 
-    SearchResult, 
-    InsightForgeResult, 
+    ZepToolsService,
+    SearchResult,
+    InsightForgeResult,
     PanoramaResult,
     InterviewResult
 )
@@ -904,7 +905,7 @@ class ReportAgent:
         self.simulation_requirement = simulation_requirement
         
         self.llm = llm_client or LLMClient()
-        self.zep_tools = zep_tools or ZepToolsService()
+        self.zep_tools = zep_tools or get_tools_service()
         
         # 工具定义
         self.tools = self._define_tools()
