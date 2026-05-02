@@ -16,6 +16,15 @@ openai>=1.0.0
 # ============= Zep Cloud =============
 zep-cloud==3.13.0
 
+# ============= Graphiti + Neo4j (backend opcional, MEMORY_BACKEND=graphiti) =============
+# [anthropic] habilita o AnthropicClient nativo do Graphiti (Claude Sonnet/Opus/Haiku).
+# Embeddings local: default Ollama (HTTP), sem dep extra de torch.
+# Para EMBED_PROVIDER=sentence_transformers (fallback Mac/macOS 26.3+):
+# pip install sentence-transformers
+graphiti-core[anthropic]>=0.29.0
+neo4j>=5.0.0
+httpx>=0.27.0
+
 # ============= OASIS 社交媒体模拟 =============
 # OASIS 社交模拟框架
 camel-oasis==0.2.5

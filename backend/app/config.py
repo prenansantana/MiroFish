@@ -36,8 +36,40 @@ class Config:
     #   "none"        — runtimes that reject response_format (LM Studio, llama.cpp server)
     LLM_JSON_MODE = os.environ.get('LLM_JSON_MODE', 'json_object').lower()
     
-    # Zep配置
+    # 记忆后端选择 (memory backend selector)
+    # zep      — Zep Cloud SaaS (default, comportamento original)
+    # graphiti — Graphiti + Neo4j self-hosted (requer NEO4J_* configurado)
+    MEMORY_BACKEND = os.environ.get('MEMORY_BACKEND', 'zep').lower()
+
+    # Zep配置 (usado quando MEMORY_BACKEND=zep)
     ZEP_API_KEY = os.environ.get('ZEP_API_KEY')
+
+    # Neo4j配置 (usado quando MEMORY_BACKEND=graphiti)
+    NEO4J_URI = os.environ.get('NEO4J_URI', 'bolt://localhost:7687')
+    NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
+    NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
+
+    # Embeddings local — usado quando MEMORY_BACKEND=graphiti
+    # Provider:
+    #   ollama                 — default; HTTP via Ollama, sem dep Python pesada
+    #   sentence_transformers  — fallback in-process (puxa torch); use se
+    #                            Ollama falhar (ex. macOS 26.3 + Ollama 0.21-0.22
+    #                            tem bug Metal/bfloat no llama runner)
+    EMBED_PROVIDER = os.environ.get('EMBED_PROVIDER', 'ollama').lower()
+
+    # Setup Ollama: `ollama pull bge-m3`
+    OLLAMA_BASE_URL = os.environ.get('OLLAMA_BASE_URL', 'http://localhost:11434')
+    OLLAMA_EMBED_MODEL = os.environ.get('OLLAMA_EMBED_MODEL', 'bge-m3')
+
+    # Setup sentence-transformers: `pip install sentence-transformers`
+    SENTENCE_TRANSFORMER_MODEL = os.environ.get(
+        'SENTENCE_TRANSFORMER_MODEL', 'BAAI/bge-m3'
+    )
+
+    # LLM provider para Graphiti (anthropic | openai). Permite escolher entre
+    # cliente Anthropic nativo (necessário para LLM_BASE_URL=api.anthropic.com)
+    # ou OpenAI default. Ignorado quando MEMORY_BACKEND=zep.
+    GRAPHITI_LLM_PROVIDER = os.environ.get('GRAPHITI_LLM_PROVIDER', 'anthropic').lower()
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB
@@ -73,7 +105,27 @@ class Config:
         errors = []
         if not cls.LLM_API_KEY:
             errors.append("LLM_API_KEY 未配置")
-        if not cls.ZEP_API_KEY:
-            errors.append("ZEP_API_KEY 未配置")
+
+        if cls.MEMORY_BACKEND == 'zep':
+            if not cls.ZEP_API_KEY:
+                errors.append("ZEP_API_KEY 未配置 (MEMORY_BACKEND=zep)")
+        elif cls.MEMORY_BACKEND == 'graphiti':
+            if not cls.NEO4J_PASSWORD:
+                errors.append("NEO4J_PASSWORD 未配置 (MEMORY_BACKEND=graphiti)")
+            if cls.GRAPHITI_LLM_PROVIDER not in ('anthropic', 'openai'):
+                errors.append(
+                    f"GRAPHITI_LLM_PROVIDER 配置无效: '{cls.GRAPHITI_LLM_PROVIDER}' "
+                    f"(应为 'anthropic' 或 'openai')"
+                )
+            if cls.EMBED_PROVIDER not in ('ollama', 'sentence_transformers'):
+                errors.append(
+                    f"EMBED_PROVIDER 配置无效: '{cls.EMBED_PROVIDER}' "
+                    f"(应为 'ollama' 或 'sentence_transformers')"
+                )
+        else:
+            errors.append(
+                f"MEMORY_BACKEND 配置无效: '{cls.MEMORY_BACKEND}' (应为 'zep' 或 'graphiti')"
+            )
+
         return errors
 

@@ -18,6 +18,13 @@ dependencies = [
     
     # Zep Cloud
     "zep-cloud==3.13.0",
+
+    # Graphiti + Neo4j (backend opcional, MEMORY_BACKEND=graphiti)
+    # [anthropic] habilita o AnthropicClient nativo do Graphiti.
+    # Embeddings rodam local via Ollama (HTTP) — sem dep extra de torch.
+    "graphiti-core[anthropic]>=0.29.0",
+    "neo4j>=5.0.0",
+    "httpx>=0.27.0",
     
     # OASIS 社交媒体模拟
     "camel-oasis==0.2.5",
