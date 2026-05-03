@@ -24,20 +24,38 @@
 
 </div>
 
-> **🔱 Adição do fork: backend de memória self-hosted.** Este fork
-> oferece um backend Graphiti + Neo4j opcional, selecionável via
-> `MEMORY_BACKEND=graphiti`, a par do Zep Cloud predefinido. A única
-> dependência paga é o LLM (Anthropic Sonnet 4.6 por predefinição);
-> os embeddings correm localmente via Ollama BGE-M3 (ou fallback
-> `sentence-transformers`). Num fixture PT, o caminho
-> Graphiti+Sonnet extraiu **2,8× mais entidades e 4,2× mais relações**
-> do mesmo input que o Zep Cloud, em PT puro em vez do
-> misto PT/EN que o pipeline predefinido do Zep produz — veja
-> [docs/research/zep-vs-graphiti-extraction-comparison.md](./docs/research/zep-vs-graphiti-extraction-comparison.md).
-> Arquitetura e setup:
+> **🔱 Adições do fork (Zep mantém-se como predefinição).**
+>
+> - **Backend de memória self-hosted** via `MEMORY_BACKEND=graphiti` —
+>   Graphiti + Neo4j 5 Community em Docker, embeddings via
+>   `sentence-transformers` local (BGE-M3 por predefinição). A única
+>   dependência paga é o LLM. Num fixture PT, Graphiti+Sonnet 4.6
+>   extraiu **2,8× mais entidades e 4,2× mais relações** do mesmo
+>   input que o Zep Cloud, em PT puro em vez do misto PT/EN que o
+>   pipeline predefinido do Zep produz —
+>   ver [docs/research/zep-vs-graphiti-extraction-comparison.md](./docs/research/zep-vs-graphiti-extraction-comparison.md).
+> - **Prompt caching da Anthropic** no caminho do LLM pago
+>   (blocos de sistema ≥ ~2k tokens marcados automaticamente com
+>   `cache_control=ephemeral`, uso registado para visibilidade).
+> - **Reutilização de perfis entre simulações do mesmo projeto** —
+>   `prepare_simulation` salta o stage 2 quando uma simulação irmã
+>   sob o mesmo `project_id` já tem os ficheiros de perfis prontos.
+>   ~$26 poupados por cenário Modelo A/B/C/D adicional sobre o mesmo
+>   grafo.
+> - **Robustez operacional** — guarda de reentrância em `/prepare`,
+>   `state.json` incremental para a UI não mostrar 0% durante a
+>   geração de perfis, limpeza de estados zombie no arranque
+>   (simulações deixadas em `preparing`/`running` após crash são
+>   auto-recuperadas para `failed`), terminação defensiva do
+>   subprocess do runner.
+> - **Internacionalização PT-BR / PT-PT** dos templates de episódio,
+>   cabeçalhos do relatório InsightForge, mensagens de progresso de
+>   perfis e mensagens de reutilização.
+>
+> Arquitetura, setup e achados operacionais:
 > [docs/research/zep-to-neo4j-graphiti.md](./docs/research/zep-to-neo4j-graphiti.md).
 > O comportamento predefinido não muda — `MEMORY_BACKEND` mantém-se
-> `zep` por defeito.
+> `zep` e `LOCALE` mantém-se `zh`.
 
 ## ⚡ Visão Geral
 
