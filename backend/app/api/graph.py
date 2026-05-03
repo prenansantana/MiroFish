@@ -11,6 +11,7 @@ from flask import request, jsonify
 from . import graph_bp
 from ..config import Config
 from ..services.ontology_generator import OntologyGenerator
+from ..services._memory_backend import get_graph_builder
 from ..services.graph_builder import GraphBuilderService
 from ..services.text_processor import TextProcessor
 from ..utils.file_parser import FileParser
@@ -387,7 +388,7 @@ def build_graph():
                 )
                 
                 # 创建图谱构建服务
-                builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+                builder = get_graph_builder()
                 
                 # 分块
                 task_manager.update_task(
@@ -578,7 +579,7 @@ def get_graph_data(graph_id: str):
                 "error": t('api.zepApiKeyMissing')
             }), 500
         
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = get_graph_builder()
         graph_data = builder.get_graph_data(graph_id)
         
         return jsonify({
@@ -606,7 +607,7 @@ def delete_graph(graph_id: str):
                 "error": t('api.zepApiKeyMissing')
             }), 500
         
-        builder = GraphBuilderService(api_key=Config.ZEP_API_KEY)
+        builder = get_graph_builder()
         builder.delete_graph(graph_id)
         
         return jsonify({

@@ -67,6 +67,27 @@ def get_entity_reader(*args, **kwargs):
     return ZepEntityReader(*args, **kwargs)
 
 
+def get_graph_builder(*args, **kwargs):
+    """
+    Return the active backend's graph builder service.
+
+    Used by api/graph.py to ingest the user-uploaded documents into the
+    initial knowledge graph. Both backends expose:
+      - create_graph(name) -> graph_id
+      - set_ontology(graph_id, ontology)
+      - add_text_batches(graph_id, chunks, batch_size, progress_callback) -> list[str]
+      - _wait_for_episodes(uuids, progress_callback, timeout)
+      - get_graph_data(graph_id) -> dict
+      - delete_graph(graph_id)
+      - build_graph_async(text, ontology, ...) -> task_id
+    """
+    if _is_graphiti():
+        from .graphiti_graph_builder import GraphitiGraphBuilder
+        return GraphitiGraphBuilder(*args, **kwargs)
+    from .graph_builder import GraphBuilderService
+    return GraphBuilderService(*args, **kwargs)
+
+
 def get_memory_updater_manager():
     """
     Return the active backend's updater manager class (not instance).
