@@ -24,18 +24,38 @@
 
 </div>
 
-> **🔱 Fork addition: self-hosted memory backend.** This fork ships an
-> optional Graphiti + Neo4j memory backend selectable via
-> `MEMORY_BACKEND=graphiti`, alongside the default Zep Cloud backend.
-> The single paid dependency is the LLM (Anthropic Sonnet 4.6 by
-> default); embeddings run locally via Ollama BGE-M3 (or
-> `sentence-transformers` fallback). On a PT-BR fixture, the
-> Graphiti+Sonnet path extracted **2.8× more entities and 4.2× more
-> relations** from the same input than Zep Cloud, in pure PT-BR
-> instead of the mixed PT/EN that the default Zep pipeline produces —
-> see [docs/research/zep-vs-graphiti-extraction-comparison.md](./docs/research/zep-vs-graphiti-extraction-comparison.md).
-> Architecture and setup: [docs/research/zep-to-neo4j-graphiti.md](./docs/research/zep-to-neo4j-graphiti.md).
-> Default behaviour is unchanged — `MEMORY_BACKEND` defaults to `zep`.
+> **🔱 Fork additions (Zep stays the default).**
+>
+> - **Self-hosted memory backend** via `MEMORY_BACKEND=graphiti` —
+>   Graphiti + Neo4j 5 Community in Docker, embeddings via local
+>   `sentence-transformers` (BGE-M3 by default). The only paid
+>   dependency is the LLM. On a PT-BR fixture, Graphiti+Sonnet 4.6
+>   extracted **2.8× more entities and 4.2× more relations** from the
+>   same input than Zep Cloud, all in pure PT-BR instead of the
+>   mixed PT/EN that Zep's default pipeline emits —
+>   see [docs/research/zep-vs-graphiti-extraction-comparison.md](./docs/research/zep-vs-graphiti-extraction-comparison.md).
+> - **Anthropic prompt caching** on the paid LLM path
+>   (system blocks ≥ ~2k tokens auto-marked `cache_control=ephemeral`,
+>   usage logged so hits are visible).
+> - **Profile reuse across simulations of the same project** —
+>   `prepare_simulation` skips stage 2 when a sibling simulation
+>   under the same `project_id` already has matching profile files.
+>   ~$26 saved per additional Modelo A/B/C/D scenario on the same
+>   knowledge graph.
+> - **Operational hardening** — reentrancy guard on `/prepare`,
+>   incremental `state.json` so the UI doesn't show 0% while
+>   profiles are being generated, zombie state cleanup at startup
+>   (sims left in `preparing`/`running` after a crash get auto-
+>   recovered to `failed`), defensive subprocess termination so the
+>   simulation runner can't outlive its sim.
+> - **Portuguese i18n** (pt-BR / pt-PT) for episode templates,
+>   InsightForge report headers, profile progress messages, and
+>   skip-profile reuse messages.
+>
+> Architecture, setup and operational findings:
+> [docs/research/zep-to-neo4j-graphiti.md](./docs/research/zep-to-neo4j-graphiti.md).
+> Default behaviour is unchanged — `MEMORY_BACKEND` defaults to `zep`,
+> `LOCALE` defaults to `zh`.
 
 ## ⚡ Overview
 
