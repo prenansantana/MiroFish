@@ -60,6 +60,19 @@ class Config:
     # cliente Anthropic nativo (necessário para LLM_BASE_URL=api.anthropic.com)
     # ou OpenAI default. Ignorado quando MEMORY_BACKEND=zep.
     GRAPHITI_LLM_PROVIDER = os.environ.get('GRAPHITI_LLM_PROVIDER', 'anthropic').lower()
+
+    # Reranker provider (llm | tei). Default 'llm' uses Sonnet through the
+    # same Anthropic client (no extra container, simple). 'tei' targets a
+    # text-embeddings-inference container running BAAI/bge-reranker-v2-m3
+    # locally, removing 1-2s of LLM round-trip per search and a fair chunk
+    # of $/run for report generation. The TEI service is in the
+    # docker-compose under the `tei` profile — start with
+    # `docker compose --profile tei up -d` to enable it.
+    RERANKER_PROVIDER = os.environ.get('RERANKER_PROVIDER', 'llm').lower()
+    TEI_BASE_URL = os.environ.get('TEI_BASE_URL', 'http://localhost:8081')
+    TEI_RERANK_MODEL = os.environ.get(
+        'TEI_RERANK_MODEL', 'BAAI/bge-reranker-v2-m3'
+    )
     
     # 文件上传配置
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024  # 50MB

@@ -26,7 +26,33 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Optional cross-encoder reranker — local replacement for the
+  # LLM-based reranker. Only used when RERANKER_PROVIDER=tei.
+  # CPU image runs anywhere; for GPU use ghcr.io/huggingface/text-
+  # embeddings-inference:1.5 with --gpus all. ~500MB RAM on CPU,
+  # 50-100ms per rerank vs 1-2s through Sonnet.
+  tei-reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: mirofish-tei-reranker
+    ports:
+      - "${TEI_PORT:-8081}:80"
+    command: --model-id ${TEI_RERANK_MODEL:-BAAI/bge-reranker-v2-m3}
+    environment:
+      HF_HUB_ENABLE_HF_TRANSFER: "1"
+    volumes:
+      - tei_cache:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+    profiles:
+      - tei  # opt-in: `docker compose --profile tei up -d`
+
 volumes:
   neo4j_data:
   neo4j_logs:
   neo4j_import:
+  tei_cache:

@@ -59,6 +59,12 @@ class SimulationState:
     entities_count: int = 0
     profiles_count: int = 0
     entity_types: List[str] = field(default_factory=list)
+
+    # Per-simulation override of the project's simulation_requirement.
+    # When set, prepare_simulation prefers this over the project's value
+    # so multiple simulations under the same project (Modelo A/B/C/D)
+    # can run different scenarios on the shared KG.
+    simulation_requirement: Optional[str] = None
     
     # 配置生成信息
     config_generated: bool = False
@@ -88,6 +94,7 @@ class SimulationState:
             "entities_count": self.entities_count,
             "profiles_count": self.profiles_count,
             "entity_types": self.entity_types,
+            "simulation_requirement": self.simulation_requirement,
             "config_generated": self.config_generated,
             "config_reasoning": self.config_reasoning,
             "current_round": self.current_round,
@@ -301,6 +308,7 @@ class SimulationManager:
             entities_count=data.get("entities_count", 0),
             profiles_count=data.get("profiles_count", 0),
             entity_types=data.get("entity_types", []),
+            simulation_requirement=data.get("simulation_requirement"),
             config_generated=data.get("config_generated", False),
             config_reasoning=data.get("config_reasoning", ""),
             current_round=data.get("current_round", 0),
@@ -320,22 +328,18 @@ class SimulationManager:
         graph_id: str,
         enable_twitter: bool = True,
         enable_reddit: bool = True,
+        simulation_requirement: Optional[str] = None,
     ) -> SimulationState:
-        """
-        创建新的模拟
-        
-        Args:
-            project_id: 项目ID
-            graph_id: Zep图谱ID
-            enable_twitter: 是否启用Twitter模拟
-            enable_reddit: 是否启用Reddit模拟
-            
-        Returns:
-            SimulationState
+        """Create a new simulation under a project.
+
+        simulation_requirement (optional): per-sim override of the
+        project's requirement. When passed, prepare_simulation will
+        prefer this over the project's value, so multiple sims under
+        the same project can run different scenarios on the shared KG.
         """
         import uuid
         simulation_id = f"sim_{uuid.uuid4().hex[:12]}"
-        
+
         state = SimulationState(
             simulation_id=simulation_id,
             project_id=project_id,
@@ -343,6 +347,7 @@ class SimulationManager:
             enable_twitter=enable_twitter,
             enable_reddit=enable_reddit,
             status=SimulationStatus.CREATED,
+            simulation_requirement=simulation_requirement,
         )
         
         self._save_simulation_state(state)
