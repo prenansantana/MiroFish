@@ -23,7 +23,20 @@
     "minutes": "minutos",
     "rounds": "rondas",
     "items": "itens",
-    "files": "ficheiros"
+    "files": "ficheiros",
+    "save": "Guardar",
+    "saving": "A guardar..."
+  },
+  "project": {
+    "requirementLabel": "Requisito da simulação",
+    "requirementPlaceholder": "Descreva o cenário que a simulação deve explorar",
+    "editRequirement": "Editar",
+    "simulationsTitle": "Simulações deste projeto",
+    "simulationsEmpty": "Ainda não há simulações — crie uma para começar.",
+    "newSimulation": "Nova simulação",
+    "newSimulationTitle": "Criar nova simulação",
+    "newSimulationHelp": "A simulação reutiliza o grafo de conhecimento e os perfis deste projeto. Sobrescreva o requisito aqui para testar um cenário diferente sem alterar o projeto.",
+    "createSimulation": "Criar"
   },
   "meta": {
     "title": "MiroFish - Prevê Tudo",

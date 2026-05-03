@@ -23,7 +23,20 @@
     "minutes": "minutes",
     "rounds": "rounds",
     "items": "items",
-    "files": "files"
+    "files": "files",
+    "save": "Save",
+    "saving": "Saving..."
+  },
+  "project": {
+    "requirementLabel": "Simulation requirement",
+    "requirementPlaceholder": "Describe the scenario the simulation should explore",
+    "editRequirement": "Edit",
+    "simulationsTitle": "Simulations under this project",
+    "simulationsEmpty": "No simulations yet — create one to get started.",
+    "newSimulation": "New simulation",
+    "newSimulationTitle": "Create new simulation",
+    "newSimulationHelp": "The simulation reuses this project's knowledge graph and profiles. Override the requirement here to test a different scenario without changing the project.",
+    "createSimulation": "Create"
   },
   "meta": {
     "title": "MiroFish - Predict Everything",
