@@ -68,13 +68,66 @@ def list_projects():
     })
 
 
+@graph_bp.route('/project/<project_id>', methods=['PATCH'])
+def update_project(project_id: str):
+    """Update project metadata. Currently scoped to simulation_requirement
+    only — the field that governs which scenario (Modelo A/B/C/D, etc.)
+    a simulation under this project will use by default.
+
+    Request body (JSON):
+        {"simulation_requirement": "..."}
+
+    Returns the full updated project.
+    """
+    project = ProjectManager.get_project(project_id)
+    if not project:
+        return jsonify({
+            "success": False,
+            "error": t('api.projectNotFound', id=project_id)
+        }), 404
+
+    data = request.get_json(silent=True) or {}
+    if "simulation_requirement" in data:
+        new_req = data.get("simulation_requirement")
+        project.simulation_requirement = (
+            str(new_req).strip() if new_req is not None else None
+        )
+
+    ProjectManager.save_project(project)
+    return jsonify({"success": True, "data": project.to_dict()})
+
+
+@graph_bp.route('/project/<project_id>/simulations', methods=['GET'])
+def list_project_simulations(project_id: str):
+    """List all simulations under a project, newest first.
+
+    Used by the Project hub view to render the list of scenarios
+    (Modelo A/B/C/D etc.) that have been run for this KG.
+    """
+    project = ProjectManager.get_project(project_id)
+    if not project:
+        return jsonify({
+            "success": False,
+            "error": t('api.projectNotFound', id=project_id)
+        }), 404
+
+    from ..services.simulation_manager import SimulationManager
+    mgr = SimulationManager()
+    sims = mgr.list_simulations(project_id=project_id)
+    return jsonify({
+        "success": True,
+        "data": [s.to_dict() for s in sims],
+        "count": len(sims),
+    })
+
+
 @graph_bp.route('/project/<project_id>', methods=['DELETE'])
 def delete_project(project_id: str):
     """
     删除项目
     """
     success = ProjectManager.delete_project(project_id)
-    
+
     if not success:
         return jsonify({
             "success": False,

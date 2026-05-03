@@ -23,7 +23,20 @@
     "minutes": "分钟",
     "rounds": "轮",
     "items": "个",
-    "files": "个文件"
+    "files": "个文件",
+    "save": "保存",
+    "saving": "保存中..."
+  },
+  "project": {
+    "requirementLabel": "模拟需求",
+    "requirementPlaceholder": "描述模拟应当探索的场景",
+    "editRequirement": "编辑",
+    "simulationsTitle": "本项目下的模拟",
+    "simulationsEmpty": "尚无模拟 — 创建一个开始。",
+    "newSimulation": "新建模拟",
+    "newSimulationTitle": "新建模拟",
+    "newSimulationHelp": "新模拟将复用本项目的知识图谱和人设。在此覆盖需求以测试不同场景，而无需修改项目本身。",
+    "createSimulation": "创建"
   },
   "meta": {
     "title": "MiroFish - 预测万物",

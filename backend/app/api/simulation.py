@@ -216,12 +216,20 @@ def create_simulation():
                 "error": t('api.graphNotBuilt')
             }), 400
         
+        # simulation_requirement is optional. When supplied, it lives on
+        # the SimulationState and is preferred over the project's value
+        # at prepare time — enabling multi-scenario runs on the same KG.
+        sim_req_override = data.get('simulation_requirement')
+        if sim_req_override is not None:
+            sim_req_override = str(sim_req_override).strip() or None
+
         manager = SimulationManager()
         state = manager.create_simulation(
             project_id=project_id,
             graph_id=graph_id,
             enable_twitter=data.get('enable_twitter', True),
             enable_reddit=data.get('enable_reddit', True),
+            simulation_requirement=sim_req_override,
         )
         
         return jsonify({
@@ -479,8 +487,14 @@ def prepare_simulation():
                 "error": t('api.projectNotFound', id=state.project_id)
             }), 404
         
-        # 获取模拟需求
-        simulation_requirement = project.simulation_requirement or ""
+        # Pick requirement: per-sim override (set at create_simulation
+        # time) wins over the project's default. This enables running
+        # multiple sims (Modelo A/B/C/D) under the same project on the
+        # same KG without rewriting the project.
+        simulation_requirement = (
+            (state.simulation_requirement or "").strip()
+            or (project.simulation_requirement or "").strip()
+        )
         if not simulation_requirement:
             return jsonify({
                 "success": False,

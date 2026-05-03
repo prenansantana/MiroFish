@@ -196,6 +196,85 @@ class LLMReranker(CrossEncoderClient):
         return [int(i) for i in indices if isinstance(i, (int, str))]
 
 
+class TEIReranker(CrossEncoderClient):
+    """
+    Reranks via a local text-embeddings-inference container running a
+    cross-encoder (BAAI/bge-reranker-v2-m3 by default).
+
+    Why this exists alongside LLMReranker:
+      - LLMReranker: 1-2s per call, costs $/call, but no extra deps
+      - TEIReranker: 50-100ms per call (CPU), $0/call, requires the
+        TEI container (opt-in via docker compose --profile tei)
+
+    Activate by setting `RERANKER_PROVIDER=tei` in env. Falls back to
+    keeping the original passage order on any HTTP/parse failure so a
+    misconfigured TEI never breaks search end-to-end.
+
+    API: POST {TEI_BASE_URL}/rerank with body
+      {"query": "...", "texts": ["...", "..."], "raw_scores": false}
+    Returns:
+      [{"index": int, "score": float}, ...]  (already sorted desc)
+    """
+
+    MAX_PASSAGES_PER_CALL = 100
+    MAX_PASSAGE_CHARS = 1000  # TEI tokenizes; chars cap is just sanity
+    HTTP_TIMEOUT_S = 30.0
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        self.base_url = (base_url or Config.TEI_BASE_URL).rstrip("/")
+        self.model = model or Config.TEI_RERANK_MODEL
+
+    async def rank(
+        self, query: str, passages: List[str]
+    ) -> List[Tuple[str, float]]:
+        if not passages:
+            return []
+        if len(passages) == 1:
+            return [(passages[0], 1.0)]
+
+        capped = passages[: self.MAX_PASSAGES_PER_CALL]
+        texts = [p[: self.MAX_PASSAGE_CHARS] for p in capped]
+
+        ranked: List[Tuple[int, float]] = []
+        try:
+            import httpx  # lazy import — only loaded when TEI is wired
+            async with httpx.AsyncClient(timeout=self.HTTP_TIMEOUT_S) as client:
+                resp = await client.post(
+                    f"{self.base_url}/rerank",
+                    json={"query": query, "texts": texts, "raw_scores": False},
+                )
+                resp.raise_for_status()
+                rows = resp.json()
+            for row in rows:
+                idx = int(row.get("index"))
+                score = float(row.get("score", 0.0))
+                if 0 <= idx < len(capped):
+                    ranked.append((idx, score))
+        except Exception as e:
+            logger.warning(
+                f"TEIReranker failed ({e}); returning original order"
+            )
+            ranked = [(i, 1.0 - i / max(len(capped), 1)) for i in range(len(capped))]
+
+        scored: List[Tuple[str, float]] = [
+            (capped[idx], score) for idx, score in ranked
+        ]
+        seen = {idx for idx, _ in ranked}
+        for i, p in enumerate(capped):
+            if i not in seen:
+                scored.append((p, 0.0))
+
+        if len(passages) > len(capped):
+            for p in passages[len(capped):]:
+                scored.append((p, 0.0))
+
+        return scored
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -276,6 +355,13 @@ def _build_llm_client() -> GraphitiLLMClient:
     return OpenAIClient(config=cfg)
 
 
+def _build_reranker(llm: GraphitiLLMClient) -> CrossEncoderClient:
+    """Pick reranker based on Config.RERANKER_PROVIDER (llm | tei)."""
+    if Config.RERANKER_PROVIDER == "tei":
+        return TEIReranker()
+    return LLMReranker(llm)
+
+
 def make_graphiti(
     uri: str,
     user: str,
@@ -290,13 +376,14 @@ def make_graphiti(
 
       LLM       — Anthropic Sonnet 4.6 (or whatever LLM_MODEL_NAME points at)
       Embedder  — BGE-M3 via sentence-transformers in-process
-      Reranker  — LLM-based, reusing the same LLM client
+      Reranker  — LLM-based by default, TEI/bge-reranker-v2-m3 when
+                  RERANKER_PROVIDER=tei
 
     Override any of the three by passing kwargs (used in tests).
     """
     llm = llm_client or _build_llm_client()
     emb = embedder or SentenceTransformerEmbedder()
-    rerank = cross_encoder or LLMReranker(llm)
+    rerank = cross_encoder or _build_reranker(llm)
     return Graphiti(
         uri=uri,
         user=user,
