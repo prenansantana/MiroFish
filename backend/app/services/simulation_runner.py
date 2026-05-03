@@ -554,6 +554,22 @@ class SimulationRunner:
             cls._save_run_state(state)
         
         finally:
+            # Defensive: if the subprocess is still alive at this point
+            # (monitor thread exited via exception path, or completion
+            # detection was racy), terminate it. Otherwise it lingers as
+            # a zombie consuming RAM/file handles long after the sim was
+            # marked completed/failed — observed PID alive 1h+ after the
+            # sim's logical completion in earlier debug-reload incidents.
+            try:
+                if process and process.poll() is None:
+                    logger.warning(
+                        f"Runner subprocess still alive after monitor exit, "
+                        f"terminating: simulation_id={simulation_id}, pid={process.pid}"
+                    )
+                    cls._terminate_process(process, simulation_id, timeout=5)
+            except Exception as e:
+                logger.error(f"Defensive subprocess terminate failed: {e}")
+
             # 停止图谱记忆更新器
             if cls._graph_memory_enabled.get(simulation_id, False):
                 try:
@@ -562,7 +578,7 @@ class SimulationRunner:
                 except Exception as e:
                     logger.error(f"停止图谱记忆更新器失败: {e}")
                 cls._graph_memory_enabled.pop(simulation_id, None)
-            
+
             # 清理进程资源
             cls._processes.pop(simulation_id, None)
             cls._action_queues.pop(simulation_id, None)

@@ -169,45 +169,54 @@ class InsightForgeResult:
         }
     
     def to_text(self) -> str:
-        """转换为详细的文本格式，供LLM理解"""
+        """Detailed text format for LLM consumption. Headers/labels are
+        localized via the project's t() so the report doesn't render with
+        Chinese labels mixed into Portuguese content."""
+        unknown = t('report.insightForgeUnknown')
+        entity_fallback = t('report.insightForgeEntityFallback')
         text_parts = [
-            f"## 未来预测深度分析",
-            f"分析问题: {self.query}",
-            f"预测场景: {self.simulation_requirement}",
-            f"\n### 预测数据统计",
-            f"- 相关预测事实: {self.total_facts}条",
-            f"- 涉及实体: {self.total_entities}个",
-            f"- 关系链: {self.total_relationships}条"
+            f"## {t('report.insightForgeTitle')}",
+            t('report.insightForgeQuery', query=self.query),
+            t('report.insightForgeScenario', scenario=self.simulation_requirement),
+            f"\n### {t('report.insightForgeStats')}",
+            f"- {t('report.insightForgeFactsCount', count=self.total_facts)}",
+            f"- {t('report.insightForgeEntitiesCount', count=self.total_entities)}",
+            f"- {t('report.insightForgeRelationsCount', count=self.total_relationships)}",
         ]
-        
-        # 子问题
+
         if self.sub_queries:
-            text_parts.append(f"\n### 分析的子问题")
+            text_parts.append(f"\n### {t('report.insightForgeSubQuestions')}")
             for i, sq in enumerate(self.sub_queries, 1):
                 text_parts.append(f"{i}. {sq}")
-        
-        # 语义搜索结果
+
         if self.semantic_facts:
-            text_parts.append(f"\n### 【关键事实】(请在报告中引用这些原文)")
+            text_parts.append(f"\n### {t('report.insightForgeKeyFacts')}")
             for i, fact in enumerate(self.semantic_facts, 1):
                 text_parts.append(f"{i}. \"{fact}\"")
-        
-        # 实体洞察
+
         if self.entity_insights:
-            text_parts.append(f"\n### 【核心实体】")
+            text_parts.append(f"\n### {t('report.insightForgeCoreEntities')}")
             for entity in self.entity_insights:
-                text_parts.append(f"- **{entity.get('name', '未知')}** ({entity.get('type', '实体')})")
+                text_parts.append(
+                    f"- **{entity.get('name', unknown)}** "
+                    f"({entity.get('type', entity_fallback)})"
+                )
                 if entity.get('summary'):
-                    text_parts.append(f"  摘要: \"{entity.get('summary')}\"")
+                    text_parts.append(
+                        f"  {t('report.insightForgeEntitySummary')}: "
+                        f"\"{entity.get('summary')}\""
+                    )
                 if entity.get('related_facts'):
-                    text_parts.append(f"  相关事实: {len(entity.get('related_facts', []))}条")
-        
-        # 关系链
+                    text_parts.append(
+                        "  " + t('report.insightForgeEntityRelatedFacts',
+                                 count=len(entity.get('related_facts', [])))
+                    )
+
         if self.relationship_chains:
-            text_parts.append(f"\n### 【关系链】")
+            text_parts.append(f"\n### {t('report.insightForgeRelationChains')}")
             for chain in self.relationship_chains:
                 text_parts.append(f"- {chain}")
-        
+
         return "\n".join(text_parts)
 
 

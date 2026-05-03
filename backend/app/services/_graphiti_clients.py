@@ -201,15 +201,78 @@ class LLMReranker(CrossEncoderClient):
 # ---------------------------------------------------------------------------
 
 
+def _make_caching_anthropic_client(api_key: str, min_cache_chars: int = 4000):
+    """Return an AsyncAnthropic client that auto-marks large system
+    prompts with cache_control: ephemeral.
+
+    Graphiti's AnthropicClient builds system prompts as plain strings.
+    Anthropic's prompt-caching only kicks in when the system field is a
+    list of content blocks with cache_control. We monkey-patch
+    `messages.create` on the AsyncAnthropic instance to transparently
+    wrap large string `system=` arguments in a cache-eligible block.
+
+    Saves ~85% on Sonnet input tokens for repeated large-system calls
+    (extraction prompts repeat across hundreds of episodes / profiles).
+    """
+    from anthropic import AsyncAnthropic
+    client = AsyncAnthropic(api_key=api_key, max_retries=1)
+    original_create = client.messages.create
+
+    async def caching_create(**kwargs):
+        system = kwargs.get('system')
+        if isinstance(system, str) and len(system) >= min_cache_chars:
+            kwargs['system'] = [{
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"},
+            }]
+        elif isinstance(system, list) and system:
+            # Already a list of blocks — find the largest text block and
+            # mark it cacheable if it's big enough and isn't already.
+            largest = max(
+                (b for b in system if isinstance(b, dict) and b.get("type") == "text"),
+                key=lambda b: len(b.get("text", "") or ""),
+                default=None,
+            )
+            if (
+                largest
+                and len(largest.get("text", "") or "") >= min_cache_chars
+                and "cache_control" not in largest
+            ):
+                largest["cache_control"] = {"type": "ephemeral"}
+        response = await original_create(**kwargs)
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            cw = getattr(usage, "cache_creation_input_tokens", 0) or 0
+            cr = getattr(usage, "cache_read_input_tokens", 0) or 0
+            if cw or cr:
+                it = getattr(usage, "input_tokens", 0) or 0
+                ot = getattr(usage, "output_tokens", 0) or 0
+                logger.info(
+                    f"graphiti anthropic cache — in={it} out={ot} "
+                    f"cache_write={cw} cache_read={cr}"
+                )
+        return response
+
+    client.messages.create = caching_create  # type: ignore[assignment]
+    return client
+
+
 def _build_llm_client() -> GraphitiLLMClient:
-    """Choose Anthropic vs OpenAI based on Config.GRAPHITI_LLM_PROVIDER."""
+    """Choose Anthropic vs OpenAI based on Config.GRAPHITI_LLM_PROVIDER.
+
+    For the Anthropic path we inject a caching-aware AsyncAnthropic
+    client so prompt caching kicks in automatically on large system
+    prompts (which Graphiti's extraction prompts very much are).
+    """
     cfg = LLMConfig(
         api_key=Config.LLM_API_KEY,
         model=Config.LLM_MODEL_NAME,
         small_model=Config.LLM_MODEL_NAME,
     )
     if Config.GRAPHITI_LLM_PROVIDER == 'anthropic':
-        return AnthropicClient(config=cfg)
+        cached_client = _make_caching_anthropic_client(Config.LLM_API_KEY)
+        return AnthropicClient(config=cfg, client=cached_client)
     return OpenAIClient(config=cfg)
 
 

@@ -314,6 +314,110 @@ for upstream Chinese users; PT-BR/PT-PT/EN renderings match the
 target locale's natural register and reduce token cost on non-CN
 deployments by ~25-30%.
 
+InsightForge result rendering (`zep_tools.py:to_text`), profile
+generator progress messages, and skip-profiles status messages were
+also moved to localized keys (`report.insightForge*`,
+`progress.profileCompleted`, `progress.profilesReused`) so reports
+generated under `LOCALE=pt-br` no longer mix Chinese headers with
+Portuguese content.
+
+## Operational findings from a real run (May 2026)
+
+End-to-end smoke (162 entities, 10 sim rounds, 4-section report)
+under the `graphiti` backend with Sonnet 4.6 yielded these calibration
+points worth recording before the next iteration of optimizations.
+
+### Anthropic prompt-cache effective threshold
+
+Anthropic's docs cite a 1024-token minimum for cache-eligible system
+blocks on Sonnet. Empirically on `claude-sonnet-4-6` the floor is
+closer to **~2000 tokens** — sub-threshold writes silently report
+`cache_creation_input_tokens=0` with no error. Calibration table:
+
+| System tokens | `cache_creation` | `cache_read` (next call) |
+|---|---|---|
+| 1016 | 0 | 0 |
+| 2516 | 2508 | unreliable |
+| 5016+ | ~5008 | ~5008 |
+
+Practical impact for this codebase: Graphiti's extraction prompts
+peak at ~1788 tokens (system part) with default ontology, ~3500
+with rich custom ontology. The profile-generator system is ~150
+tokens (uncacheable). Reranker prompts vary by passage count.
+
+### Cache hits in production traffic
+
+Single-run measurement (162 profiles + 10-round sim + report,
+~5.36M input tokens total in the prep window):
+
+- `cache_write_5m`: ~299K (5.6% of input)
+- `cache_read`: ~337K (6.3% of input)
+- Direct dollar savings: ~$0.91 (3.4% of input cost)
+
+The win is real but small because the hot paths
+(`oasis_profile_generator`, Graphiti `add_episode`) wrap most
+context inside the **user message**, not the system block. Splitting
+user messages on natural boundaries (`<TEXT>...</TEXT>`,
+`<CURRENT_MESSAGE>...`) was prototyped and shelved — fragile across
+graphiti-core upgrades, low ROI.
+
+`MIN_CACHE_CHARS` is set to **4000** in
+`backend/app/services/_graphiti_clients.py` and
+`backend/app/utils/llm_client.py`. That's below Anthropic's effective
+floor for English (~1000 tokens at 4 chars/token) but well above for
+Chinese (~2700 tokens at 1.5 chars/token), so the `cache_control`
+flag fires universally and Anthropic decides which actually cache.
+
+### Profile reuse across simulations of the same project
+
+`oasis_profile_generator` does **not** read
+`simulation_requirement` — profiles depend only on KG entities. A
+project running Modelo A then Modelo B/C/D therefore wastes ~$26 of
+LLM calls on each repeat unless we reuse profiles.
+
+`SimulationManager.prepare_simulation` now detects a sibling sim
+under the same `project_id` whose `reddit_profiles.json` +
+`twitter_profiles.csv` are complete and matching `entities_count`.
+When found, it copies the files and skips stage 2 entirely.
+Helper: `SimulationManager._find_reusable_profiles`.
+
+### Zombie state cleanup at startup
+
+If the backend dies mid-prepare or mid-run (debug-reload, OOM,
+`kill -9`), the in-memory `TaskManager` forgets the task but
+`state.json` keeps `status=preparing` or `running` indefinitely.
+The UI then polls them as if alive, showing a permanent "0% / in
+progress" spinner.
+
+`SimulationManager.cleanup_zombie_states()` runs on every
+`create_app()` and rewrites such states to `failed` with an
+explanatory error. Pid liveness is checked for `running` states via
+`os.kill(pid, 0)`.
+
+### Defensive subprocess termination
+
+The simulation runner's monitor thread relies on
+`while process.poll() is None` to detect natural exit, then cleans
+up its `_processes` dict. If the monitor thread itself raises before
+reaching that loop's normal exit, the subprocess can outlive the
+backend by hours (observed: pid alive 1h25min after the sim was
+already marked completed). The `finally` block now defensively
+calls `_terminate_process` if `process.poll() is None`.
+
+### What would actually reduce cost on the next branch
+
+Ordered by impact on a typical 162-entity, 10-round, 4-section run:
+
+1. **Swap `LLMReranker` for TEI / `bge-reranker-v2-m3` local** —
+   each search currently pays a 1-2s LLM round-trip for ranking;
+   ReACT runs 5-15 searches per section. Estimated savings: $10-15
+   per report, plus 30-60s wall time.
+2. **Reuse profiles** — already in this branch, $26 per additional
+   scenario on the same project.
+3. **Reduce report ReACT depth** — current default lets the agent
+   take many search iterations per section; capping aggressively
+   trades nuance for cost.
+
 ## Files of interest
 
 | File | Purpose |

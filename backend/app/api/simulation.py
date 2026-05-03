@@ -445,6 +445,31 @@ def prepare_simulation():
                 })
             else:
                 logger.info(f"模拟 {simulation_id} 未准备完成，将启动准备任务")
+
+        # Reentrancy guard — if a prepare task is already in flight for this
+        # simulation, return its task_id instead of spawning a duplicate
+        # background thread. Without this, a UI retry / double-click triggers
+        # two parallel profile-generation runs that race on the output file
+        # and double the LLM bill.
+        from ..models.task import TaskManager as _TM, TaskStatus as _TS
+        _existing_tm = _TM()
+        for _t in _existing_tm.list_tasks(task_type="simulation_prepare"):
+            if (_t.get("metadata", {}).get("simulation_id") == simulation_id
+                    and _t.get("status") in (_TS.PENDING.value, _TS.PROCESSING.value)):
+                logger.warning(
+                    f"模拟 {simulation_id} 已有 prepare 任务在执行 "
+                    f"(task_id={_t['task_id']})，拒绝重复请求"
+                )
+                return jsonify({
+                    "success": True,
+                    "data": {
+                        "simulation_id": simulation_id,
+                        "task_id": _t["task_id"],
+                        "status": "preparing",
+                        "message": "Preparation already in progress",
+                        "already_running": True
+                    }
+                }), 200
         
         # 从项目获取必要信息
         project = ProjectManager.get_project(state.project_id)
@@ -1101,7 +1126,8 @@ def get_simulation_profiles_realtime(simulation_id: str):
         # 检查是否正在生成（通过 state.json 判断）
         is_generating = False
         total_expected = None
-        
+        state_profiles_count = 0
+
         state_file = os.path.join(sim_dir, "state.json")
         if os.path.exists(state_file):
             try:
@@ -1110,15 +1136,25 @@ def get_simulation_profiles_realtime(simulation_id: str):
                     status = state_data.get("status", "")
                     is_generating = status == "preparing"
                     total_expected = state_data.get("entities_count")
+                    state_profiles_count = state_data.get("profiles_count", 0) or 0
             except Exception:
                 pass
-        
+
+        # Effective count: prefer the larger of file-derived and state-derived.
+        # File lags briefly between completion and disk flush; state.json is
+        # updated on every progress tick. Either could be momentarily higher
+        # depending on which thread won the race.
+        file_count = len(profiles)
+        effective_count = max(file_count, state_profiles_count)
+
         return jsonify({
             "success": True,
             "data": {
                 "simulation_id": simulation_id,
                 "platform": platform,
-                "count": len(profiles),
+                "count": effective_count,
+                "file_count": file_count,
+                "state_count": state_profiles_count,
                 "total_expected": total_expected,
                 "is_generating": is_generating,
                 "file_exists": file_exists,
