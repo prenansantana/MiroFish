@@ -24,6 +24,19 @@
 
 </div>
 
+> **🔱 Fork addition: self-hosted memory backend.** This fork ships an
+> optional Graphiti + Neo4j memory backend selectable via
+> `MEMORY_BACKEND=graphiti`, alongside the default Zep Cloud backend.
+> The single paid dependency is the LLM (Anthropic Sonnet 4.6 by
+> default); embeddings run locally via Ollama BGE-M3 (or
+> `sentence-transformers` fallback). On a PT-BR fixture, the
+> Graphiti+Sonnet path extracted **2.8× more entities and 4.2× more
+> relations** from the same input than Zep Cloud, in pure PT-BR
+> instead of the mixed PT/EN that the default Zep pipeline produces —
+> see [docs/research/zep-vs-graphiti-extraction-comparison.md](./docs/research/zep-vs-graphiti-extraction-comparison.md).
+> Architecture and setup: [docs/research/zep-to-neo4j-graphiti.md](./docs/research/zep-to-neo4j-graphiti.md).
+> Default behaviour is unchanged — `MEMORY_BACKEND` defaults to `zep`.
+
 ## ⚡ Overview
 
 **MiroFish** is a next-generation AI prediction engine powered by multi-agent technology. By extracting seed information from the real world (such as breaking news, policy drafts, or financial signals), it automatically constructs a high-fidelity parallel digital world. Within this space, thousands of intelligent agents with independent personalities, long-term memory, and behavioral logic freely interact and undergo social evolution. You can inject variables dynamically from a "God's-eye view" to precisely deduce future trajectories — **rehearse the future in a digital sandbox, and win decisions after countless simulations**.

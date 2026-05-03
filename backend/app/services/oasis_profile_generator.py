@@ -16,14 +16,56 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from openai import OpenAI
-from zep_cloud.client import Zep
 
 from ..config import Config
 from ..utils.logger import get_logger
 from ..utils.locale import get_language_instruction, get_locale, set_locale, t
+from ._memory_backend import get_tools_service
 from .zep_entity_reader import EntityNode, ZepEntityReader
 
 logger = get_logger('mirofish.oasis_profile')
+
+
+class _SearchHit:
+    """Lightweight wrapper exposing dict keys as attributes (Zep-shape)."""
+
+    def __init__(self, data: dict):
+        self._data = data or {}
+
+    def __getattr__(self, name):
+        return self._data.get(name)
+
+
+class _SearchResultProxy:
+    """Adapts tools.search_graph SearchResult to the Zep-style result object."""
+
+    def __init__(self, result, scope: str):
+        self.edges = (
+            [_SearchHit(e) for e in (result.edges or [])] if scope == "edges" else []
+        )
+        self.nodes = (
+            [_SearchHit(n) for n in (result.nodes or [])] if scope == "nodes" else []
+        )
+
+
+class _GraphAPIShim:
+    """Mimics `client.graph.search(...)` on top of get_tools_service()."""
+
+    def __init__(self, tools):
+        self._tools = tools
+
+    def search(self, query, graph_id, limit=10, scope="edges", reranker=None, **_):
+        result = self._tools.search_graph(
+            graph_id=graph_id, query=query, limit=limit, scope=scope
+        )
+        return _SearchResultProxy(result, scope=scope)
+
+
+class _SearchAdapter:
+    """Exposes a `.graph.search(...)` surface compatible with the Zep client."""
+
+    def __init__(self, tools):
+        self.graph = _GraphAPIShim(tools)
 
 
 @dataclass
@@ -198,16 +240,16 @@ class OasisProfileGenerator:
             base_url=self.base_url
         )
         
-        # Zep客户端用于检索丰富上下文
+        # Memory backend tools (Zep or Graphiti, dispatched by factory) for
+        # enrichment search. Kept under the legacy `zep_client` attribute name
+        # so the rest of this file's callsites don't need to change.
         self.zep_api_key = zep_api_key or Config.ZEP_API_KEY
-        self.zep_client = None
         self.graph_id = graph_id
-        
-        if self.zep_api_key:
-            try:
-                self.zep_client = Zep(api_key=self.zep_api_key)
-            except Exception as e:
-                logger.warning(f"Zep客户端初始化失败: {e}")
+        self.zep_client = None  # type: ignore[assignment]
+        try:
+            self.zep_client = _SearchAdapter(get_tools_service())
+        except Exception as e:
+            logger.warning(f"Memory backend tools init failed: {e}")
     
     def generate_profile_from_entity(
         self, 
@@ -983,9 +1025,11 @@ class OasisProfileGenerator:
                     
                     if progress_callback:
                         progress_callback(
-                            current, 
-                            total, 
-                            f"已完成 {current}/{total}: {entity.name}（{entity_type}）"
+                            current,
+                            total,
+                            t('progress.profileCompleted',
+                              current=current, total=total,
+                              name=entity.name, type=entity_type)
                         )
                     
                     if error:

@@ -58,3 +58,5 @@ backend/uploads/
 
 # Docker 数据
 data/
+# Generated comparison reports (use docs/research/zep-vs-graphiti-extraction-comparison.md for the canonical write-up)
+backend/scripts/_compare_report.md

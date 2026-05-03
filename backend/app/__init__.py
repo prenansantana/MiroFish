@@ -47,6 +47,18 @@ def create_app(config_class=Config):
     SimulationRunner.register_cleanup()
     if should_log_startup:
         logger.info("已注册模拟进程清理函数")
+
+    # Zombie state cleanup: previous run may have left simulations stuck
+    # at status=preparing/running (debug reload, crash, kill). Without this
+    # sweep the UI keeps polling them as if they were live.
+    if should_log_startup:
+        from .services.simulation_manager import SimulationManager
+        try:
+            n = SimulationManager.cleanup_zombie_states()
+            if n:
+                logger.info(f"Zombie state cleanup: {n} simulation(s) auto-recovered to failed")
+        except Exception as e:
+            logger.warning(f"Zombie state cleanup failed (non-fatal): {e}")
     
     # 请求日志中间件
     @app.before_request

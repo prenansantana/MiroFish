@@ -14,6 +14,7 @@ from enum import Enum
 
 from ..config import Config
 from ..utils.logger import get_logger
+from ._memory_backend import get_entity_reader
 from .zep_entity_reader import ZepEntityReader, FilteredEntities
 from .oasis_profile_generator import OasisProfileGenerator, OasisAgentProfile
 from .simulation_config_generator import SimulationConfigGenerator, SimulationParameters
@@ -146,11 +147,133 @@ class SimulationManager:
         """保存模拟状态到文件"""
         sim_dir = self._get_simulation_dir(state.simulation_id)
         state_file = os.path.join(sim_dir, "state.json")
-        
+
         state.updated_at = datetime.now().isoformat()
-        
+
         with open(state_file, 'w', encoding='utf-8') as f:
             json.dump(state.to_dict(), f, ensure_ascii=False, indent=2)
+
+    @classmethod
+    def cleanup_zombie_states(cls) -> int:
+        """Mark sims with non-terminal status but no live process as failed.
+
+        When the backend dies mid-prepare or mid-run (kill -9, OOM, debug
+        reload), the in-memory TaskManager forgets the task but state.json
+        keeps `status=preparing` or `running` forever. The UI then shows
+        them as "in progress, 0%" — a zombie. This sweep, run at startup,
+        catches those orphans and marks them failed so the UI stops
+        spinning on them.
+
+        Heuristic for "no live process":
+          - status == 'preparing': no concept of an OS pid, so any
+            preparing state on startup is by definition orphaned (the
+            background thread that owned it died with the previous
+            process).
+          - status == 'running': there's a `process_pid` in run_state.json.
+            If the pid is missing or not alive, mark failed.
+
+        Returns the number of states it touched.
+        """
+        manager = cls()
+        touched = 0
+        if not os.path.isdir(cls.SIMULATION_DATA_DIR):
+            return 0
+        for sid in os.listdir(cls.SIMULATION_DATA_DIR):
+            sim_dir = os.path.join(cls.SIMULATION_DATA_DIR, sid)
+            state_file = os.path.join(sim_dir, "state.json")
+            if not os.path.isfile(state_file):
+                continue
+            try:
+                with open(state_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+
+            status = data.get("status")
+            if status not in ("preparing", "running"):
+                continue
+
+            # `running` zombies need the pid check; `preparing` zombies
+            # are unconditional (no thread persistence across restart).
+            if status == "running":
+                run_state_file = os.path.join(sim_dir, "run_state.json")
+                pid = None
+                if os.path.isfile(run_state_file):
+                    try:
+                        with open(run_state_file, 'r', encoding='utf-8') as f:
+                            pid = json.load(f).get("process_pid")
+                    except (OSError, json.JSONDecodeError):
+                        pid = None
+                if pid:
+                    try:
+                        os.kill(int(pid), 0)  # signal 0 = liveness check
+                        continue  # process alive — leave alone
+                    except (ProcessLookupError, PermissionError, ValueError):
+                        pass
+
+            data["status"] = SimulationStatus.FAILED.value
+            data["error"] = (
+                "Backend was restarted while this simulation was in "
+                f"'{status}'. State auto-recovered to failed at startup."
+            )
+            data["updated_at"] = datetime.now().isoformat()
+            try:
+                with open(state_file, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                touched += 1
+                logger.info(
+                    f"Zombie cleanup: {sid} ({status}) → failed"
+                )
+            except OSError as e:
+                logger.warning(f"Could not save zombie state {sid}: {e}")
+        return touched
+
+    def _find_reusable_profiles(
+        self,
+        project_id: str,
+        expected_count: int,
+        current_simulation_id: str,
+    ) -> Optional[str]:
+        """Locate a sibling simulation under the same project_id with both
+        profile files complete and matching expected_count.
+
+        Profiles in this codebase only depend on entities, never on the
+        simulation_requirement, so any sibling simulation that finished
+        stage 2 is a valid donor — even if its scenario (Modelo A/B/C/D)
+        differs. Returns the source simulation_id, or None.
+        """
+        if not project_id:
+            return None
+        try:
+            sims = os.listdir(self.SIMULATION_DATA_DIR)
+        except FileNotFoundError:
+            return None
+        for sid in sims:
+            if sid == current_simulation_id:
+                continue
+            sim_dir = os.path.join(self.SIMULATION_DATA_DIR, sid)
+            state_file = os.path.join(sim_dir, "state.json")
+            if not os.path.isfile(state_file):
+                continue
+            try:
+                with open(state_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if data.get("project_id") != project_id:
+                continue
+            reddit = os.path.join(sim_dir, "reddit_profiles.json")
+            twitter = os.path.join(sim_dir, "twitter_profiles.csv")
+            if not (os.path.isfile(reddit) and os.path.isfile(twitter)):
+                continue
+            try:
+                with open(reddit, 'r', encoding='utf-8') as f:
+                    profs = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(profs, list) and len(profs) == expected_count:
+                return sid
+        return None
         
         self._simulations[state.simulation_id] = state
     
@@ -273,7 +396,7 @@ class SimulationManager:
             if progress_callback:
                 progress_callback("reading", 0, t('progress.connectingZepGraph'))
             
-            reader = ZepEntityReader()
+            reader = get_entity_reader()
             
             if progress_callback:
                 progress_callback("reading", 30, t('progress.readingNodeData'))
@@ -303,7 +426,7 @@ class SimulationManager:
             
             # ========== 阶段2: 生成Agent Profile ==========
             total_entities = len(filtered.entities)
-            
+
             if progress_callback:
                 progress_callback(
                     "generating_profiles", 0,
@@ -311,75 +434,118 @@ class SimulationManager:
                     current=0,
                     total=total_entities
                 )
-            
-            # 传入graph_id以启用Zep检索功能，获取更丰富的上下文
-            generator = OasisProfileGenerator(graph_id=state.graph_id)
-            
-            def profile_progress(current, total, msg):
+
+            # Profile reuse: profiles only depend on entities (no scenario
+            # input), so a sibling sim under the same project_id can donate
+            # its files. Skips the most expensive stage (~$26 worth of
+            # LLM calls for 162 entities) when running multiple Modelo A/B/
+            # C/D scenarios on the same KG.
+            profiles: Optional[List[OasisAgentProfile]] = None
+            reused_from = self._find_reusable_profiles(
+                state.project_id, total_entities, state.simulation_id
+            )
+            if reused_from:
+                src_dir = self._get_simulation_dir(reused_from)
+                if state.enable_reddit:
+                    shutil.copyfile(
+                        os.path.join(src_dir, "reddit_profiles.json"),
+                        os.path.join(sim_dir, "reddit_profiles.json"),
+                    )
+                if state.enable_twitter:
+                    shutil.copyfile(
+                        os.path.join(src_dir, "twitter_profiles.csv"),
+                        os.path.join(sim_dir, "twitter_profiles.csv"),
+                    )
+                state.profiles_count = total_entities
+                self._save_simulation_state(state)
+                msg = t(
+                    'progress.profilesReused',
+                    count=total_entities, source=reused_from,
+                )
+                logger.info(msg)
                 if progress_callback:
                     progress_callback(
-                        "generating_profiles", 
-                        int(current / total * 100), 
-                        msg,
-                        current=current,
-                        total=total,
-                        item_name=msg
+                        "generating_profiles", 100, msg,
+                        current=total_entities, total=total_entities,
                     )
-            
-            # 设置实时保存的文件路径（优先使用 Reddit JSON 格式）
-            realtime_output_path = None
-            realtime_platform = "reddit"
-            if state.enable_reddit:
-                realtime_output_path = os.path.join(sim_dir, "reddit_profiles.json")
+                # Skip remainder of stage 2 entirely.
+                # Stage 3 only needs `entities` (already loaded above), not
+                # the in-memory profiles list.
+            else:
+                # 传入graph_id以启用Zep检索功能，获取更丰富的上下文
+                generator = OasisProfileGenerator(graph_id=state.graph_id)
+
+                def profile_progress(current, total, msg):
+                    if progress_callback:
+                        progress_callback(
+                            "generating_profiles",
+                            int(current / total * 100),
+                            msg,
+                            current=current,
+                            total=total,
+                            item_name=msg
+                        )
+                    # Persist incremental profile count to state.json so the UI's
+                    # realtime endpoint can show progress even if the
+                    # reddit_profiles.json file write lags behind (or hasn't
+                    # happened yet for the very first profile).
+                    state.profiles_count = current
+                    self._save_simulation_state(state)
+
+                # 设置实时保存的文件路径（优先使用 Reddit JSON 格式）
+                realtime_output_path = None
                 realtime_platform = "reddit"
-            elif state.enable_twitter:
-                realtime_output_path = os.path.join(sim_dir, "twitter_profiles.csv")
-                realtime_platform = "twitter"
-            
-            profiles = generator.generate_profiles_from_entities(
-                entities=filtered.entities,
-                use_llm=use_llm_for_profiles,
-                progress_callback=profile_progress,
-                graph_id=state.graph_id,  # 传入graph_id用于Zep检索
-                parallel_count=parallel_profile_count,  # 并行生成数量
-                realtime_output_path=realtime_output_path,  # 实时保存路径
-                output_platform=realtime_platform  # 输出格式
-            )
-            
-            state.profiles_count = len(profiles)
-            
-            # 保存Profile文件（注意：Twitter使用CSV格式，Reddit使用JSON格式）
-            # Reddit 已经在生成过程中实时保存了，这里再保存一次确保完整性
-            if progress_callback:
-                progress_callback(
-                    "generating_profiles", 95,
-                    t('progress.savingProfiles'),
-                    current=total_entities,
-                    total=total_entities
+                if state.enable_reddit:
+                    realtime_output_path = os.path.join(sim_dir, "reddit_profiles.json")
+                    realtime_platform = "reddit"
+                elif state.enable_twitter:
+                    realtime_output_path = os.path.join(sim_dir, "twitter_profiles.csv")
+                    realtime_platform = "twitter"
+
+                profiles = generator.generate_profiles_from_entities(
+                    entities=filtered.entities,
+                    use_llm=use_llm_for_profiles,
+                    progress_callback=profile_progress,
+                    graph_id=state.graph_id,  # 传入graph_id用于Zep检索
+                    parallel_count=parallel_profile_count,  # 并行生成数量
+                    realtime_output_path=realtime_output_path,  # 实时保存路径
+                    output_platform=realtime_platform  # 输出格式
                 )
-            
-            if state.enable_reddit:
-                generator.save_profiles(
-                    profiles=profiles,
-                    file_path=os.path.join(sim_dir, "reddit_profiles.json"),
-                    platform="reddit"
-                )
-            
-            if state.enable_twitter:
-                # Twitter使用CSV格式！这是OASIS的要求
-                generator.save_profiles(
-                    profiles=profiles,
-                    file_path=os.path.join(sim_dir, "twitter_profiles.csv"),
-                    platform="twitter"
-                )
-            
-            if progress_callback:
-                progress_callback(
-                    "generating_profiles", 100,
-                    t('progress.profilesComplete', count=len(profiles)),
-                    current=len(profiles),
-                    total=len(profiles)
-                )
+
+                state.profiles_count = len(profiles)
+
+                # 保存Profile文件（注意：Twitter使用CSV格式，Reddit使用JSON格式）
+                # Reddit 已经在生成过程中实时保存了，这里再保存一次确保完整性
+                if progress_callback:
+                    progress_callback(
+                        "generating_profiles", 95,
+                        t('progress.savingProfiles'),
+                        current=total_entities,
+                        total=total_entities
+                    )
+
+                if state.enable_reddit:
+                    generator.save_profiles(
+                        profiles=profiles,
+                        file_path=os.path.join(sim_dir, "reddit_profiles.json"),
+                        platform="reddit"
+                    )
+
+                if state.enable_twitter:
+                    # Twitter使用CSV格式！这是OASIS的要求
+                    generator.save_profiles(
+                        profiles=profiles,
+                        file_path=os.path.join(sim_dir, "twitter_profiles.csv"),
+                        platform="twitter"
+                    )
+
+                if progress_callback:
+                    progress_callback(
+                        "generating_profiles", 100,
+                        t('progress.profilesComplete', count=len(profiles)),
+                        current=len(profiles),
+                        total=len(profiles)
+                    )
             
             # ========== 阶段3: LLM智能生成模拟配置 ==========
             if progress_callback:

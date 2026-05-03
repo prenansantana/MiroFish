@@ -75,7 +75,13 @@
     "layoutGraph": "Grafo",
     "layoutSplit": "Dividido",
     "layoutWorkbench": "Bancada",
-    "stepNames": ["Construção do Grafo", "Configuração do Ambiente", "Executar Simulação", "Geração do Relatório", "Interação Profunda"]
+    "stepNames": [
+      "Construção do Grafo",
+      "Configuração do Ambiente",
+      "Executar Simulação",
+      "Geração do Relatório",
+      "Interação Profunda"
+    ]
   },
   "step1": {
     "ontologyGeneration": "Geração de Ontologia",
@@ -393,10 +399,10 @@
   "progress": {
     "initGraphService": "Inicializando serviço de construção do grafo...",
     "textChunking": "Dividindo texto em chunks...",
-    "creatingZepGraph": "Criando grafo no Zep...",
+    "creatingZepGraph": "Criando grafo de conhecimento...",
     "settingOntology": "Definindo a ontologia...",
     "addingChunks": "Adicionando {count} chunks de texto...",
-    "waitingZepProcess": "Aguardando o Zep processar os dados...",
+    "waitingZepProcess": "Aguardando o grafo processar os dados...",
     "fetchingGraphData": "Buscando dados do grafo...",
     "graphBuildComplete": "Construção do grafo concluída",
     "buildFailed": "Falha na construção: {error}",
@@ -410,12 +416,12 @@
     "noEpisodesWait": "Nenhum episódio a aguardar",
     "waitingEpisodes": "Aguardando o processamento de {count} chunks de texto...",
     "episodesTimeout": "Alguns chunks atingiram o tempo limite, {completed}/{total} concluídos",
-    "zepProcessing": "Zep processando... {completed}/{total} concluídos, {pending} pendentes ({elapsed}s)",
+    "zepProcessing": "Grafo processando... {completed}/{total} concluídos, {pending} pendentes ({elapsed}s)",
     "processingComplete": "Processamento concluído: {completed}/{total}",
     "taskComplete": "Tarefa concluída",
     "taskFailed": "Tarefa falhou",
     "startPreparingEnv": "Preparando ambiente de simulação...",
-    "connectingZepGraph": "Conectando ao grafo do Zep...",
+    "connectingZepGraph": "Conectando ao grafo de conhecimento...",
     "readingNodeData": "Lendo dados dos nós...",
     "readingComplete": "Concluído, {count} entidades encontradas",
     "startGenerating": "Iniciando geração...",
@@ -447,6 +453,8 @@
     "agentConfigResult": "Configuração de Agentes: {count} gerados",
     "postAssignResult": "Atribuição de Posts: {count} posts atribuídos",
     "profileGenerated": "[Gerado] {name} ({type})",
+    "profileCompleted": "Concluído {current}/{total}: {name} ({type})",
+    "profilesReused": "Reaproveitando {count} perfis da simulação {source} (mesmo projeto)",
     "readingGraphEntities": "Lendo Entidades do Grafo",
     "generatingProfiles": "Gerando Perfis de Agentes",
     "generatingSimConfig": "Gerando Configuração da Simulação",
@@ -607,7 +615,22 @@
     "reportSaved": "Relatório salvo: {reportId}",
     "reportFolderDeleted": "Pasta do relatório excluída: {reportId}",
     "redirectToQuickSearch": "search_graph redirecionado para quick_search",
-    "redirectToInsightForge": "get_simulation_context redirecionado para insight_forge"
+    "redirectToInsightForge": "get_simulation_context redirecionado para insight_forge",
+    "insightForgeTitle": "Análise Profunda de Previsão",
+    "insightForgeQuery": "Pergunta: {query}",
+    "insightForgeScenario": "Cenário: {scenario}",
+    "insightForgeStats": "Estatísticas dos Dados",
+    "insightForgeFactsCount": "Fatos relevantes: {count}",
+    "insightForgeEntitiesCount": "Entidades envolvidas: {count}",
+    "insightForgeRelationsCount": "Cadeias de relação: {count}",
+    "insightForgeSubQuestions": "Sub-perguntas Analisadas",
+    "insightForgeKeyFacts": "Fatos-chave (citar no relatório)",
+    "insightForgeCoreEntities": "Entidades Centrais",
+    "insightForgeEntitySummary": "resumo",
+    "insightForgeEntityRelatedFacts": "fatos relacionados: {count}",
+    "insightForgeRelationChains": "Cadeias de Relação",
+    "insightForgeUnknown": "desconhecido",
+    "insightForgeEntityFallback": "entidade"
   },
   "console": {
     "zepToolsInitialized": "ZepToolsService inicializado",
@@ -661,5 +684,73 @@
     "llmSelectAgentFailed": "Seleção de agente pelo LLM falhou, usando seleção padrão: {error}",
     "generateInterviewQuestionsFailed": "Falha ao gerar perguntas de entrevista: {error}",
     "generateInterviewSummaryFailed": "Falha ao gerar resumo da entrevista: {error}"
+  },
+  "episode": {
+    "actor_prefix": "{actor}: {description}",
+    "create_post": {
+      "with_content": "publicou um post: «{content}»",
+      "no_content": "publicou um post"
+    },
+    "like_post": {
+      "with_author_content": "curtiu o post de {author}: «{content}»",
+      "with_content_only": "curtiu um post: «{content}»",
+      "with_author_only": "curtiu um post de {author}",
+      "fallback": "curtiu um post"
+    },
+    "dislike_post": {
+      "with_author_content": "descurtiu o post de {author}: «{content}»",
+      "with_content_only": "descurtiu um post: «{content}»",
+      "with_author_only": "descurtiu um post de {author}",
+      "fallback": "descurtiu um post"
+    },
+    "repost": {
+      "with_author_content": "compartilhou o post de {author}: «{content}»",
+      "with_content_only": "compartilhou um post: «{content}»",
+      "with_author_only": "compartilhou um post de {author}",
+      "fallback": "compartilhou um post"
+    },
+    "quote_post": {
+      "with_author_content": "citou o post de {author} «{content}»",
+      "with_content_only": "citou um post «{content}»",
+      "with_author_only": "citou um post de {author}",
+      "fallback": "citou um post",
+      "suffix_with_comment": ", comentando: «{comment}»"
+    },
+    "follow": {
+      "with_target": "começou a seguir «{target}»",
+      "no_target": "começou a seguir um usuário"
+    },
+    "create_comment": {
+      "with_content_author_post": "comentou no post de {author} «{post}»: «{content}»",
+      "with_content_post": "comentou no post «{post}»: «{content}»",
+      "with_content_author": "comentou no post de {author}: «{content}»",
+      "with_content_only": "comentou: «{content}»",
+      "fallback": "publicou um comentário"
+    },
+    "like_comment": {
+      "with_author_content": "curtiu o comentário de {author}: «{content}»",
+      "with_content_only": "curtiu um comentário: «{content}»",
+      "with_author_only": "curtiu um comentário de {author}",
+      "fallback": "curtiu um comentário"
+    },
+    "dislike_comment": {
+      "with_author_content": "descurtiu o comentário de {author}: «{content}»",
+      "with_content_only": "descurtiu um comentário: «{content}»",
+      "with_author_only": "descurtiu um comentário de {author}",
+      "fallback": "descurtiu um comentário"
+    },
+    "search": {
+      "with_query": "pesquisou «{query}»",
+      "no_query": "fez uma pesquisa"
+    },
+    "search_user": {
+      "with_query": "pesquisou pelo usuário «{query}»",
+      "no_query": "pesquisou por um usuário"
+    },
+    "mute": {
+      "with_target": "silenciou o usuário «{target}»",
+      "no_target": "silenciou um usuário"
+    },
+    "generic": "realizou a ação {action_type}"
   }
 }
