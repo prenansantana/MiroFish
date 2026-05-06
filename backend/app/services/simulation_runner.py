@@ -332,10 +332,38 @@ class SimulationRunner:
         Returns:
             SimulationRunState
         """
-        # 检查是否已在运行
+        # 检查是否已在运行 + zombie detection.
+        # If a previous runner was killed with SIGKILL (OOM, manual kill -9,
+        # backend crash) the run_state.json keeps runner_status=running or
+        # starting forever, with process_pid pointing at a dead/absent pid.
+        # /start used to reject in that case, leaving the user stuck. We now
+        # treat such a state as zombie and overwrite it before starting fresh.
         existing = cls.get_run_state(simulation_id)
         if existing and existing.runner_status in [RunnerStatus.RUNNING, RunnerStatus.STARTING]:
-            raise ValueError(f"模拟已在运行中: {simulation_id}")
+            pid = getattr(existing, 'process_pid', None)
+            pid_alive = False
+            if pid:
+                try:
+                    os.kill(int(pid), 0)  # signal 0 = liveness probe
+                    pid_alive = True
+                except (ProcessLookupError, PermissionError, ValueError):
+                    pid_alive = False
+            if pid_alive:
+                raise ValueError(f"模拟已在运行中: {simulation_id}")
+            logger.warning(
+                f"Recovering zombie run_state for {simulation_id}: "
+                f"runner_status={existing.runner_status.value} pid={pid} "
+                f"(pid not alive). Resetting to failed before re-start."
+            )
+            existing.runner_status = RunnerStatus.FAILED
+            existing.twitter_running = False
+            existing.reddit_running = False
+            existing.completed_at = datetime.now().isoformat()
+            existing.error = (
+                "Previous runner exited without cleanup (SIGKILL/OOM/crash). "
+                "Auto-recovered."
+            )
+            cls._save_run_state(existing)
         
         # 加载模拟配置
         sim_dir = os.path.join(cls.RUN_STATE_DIR, simulation_id)
