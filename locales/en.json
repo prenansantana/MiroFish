@@ -335,7 +335,9 @@
     "notStarted": "Not started",
     "roundsProgress": "{current}/{total} rounds",
     "untitledSimulation": "Untitled simulation",
-    "unknownFile": "Unknown file"
+    "unknownFile": "Unknown file",
+    "simulationCountSingular": "simulation",
+    "simulationCountPlural": "simulations"
   },
   "api": {
     "projectNotFound": "Project not found: {id}",

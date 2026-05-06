@@ -70,6 +70,19 @@ export function getProject(projectId) {
 }
 
 /**
+ * List all projects (newest first). Used by the Home view's project
+ * gallery so users can pick a project before drilling into its
+ * simulations.
+ */
+export function listProjects(limit = 50) {
+  return service({
+    url: `/api/graph/project/list`,
+    method: 'get',
+    params: { limit }
+  })
+}
+
+/**
  * Update project metadata (currently scoped to simulation_requirement).
  * @param {String} projectId
  * @param {Object} patch  e.g. { simulation_requirement: "..." }

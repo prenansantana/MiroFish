@@ -812,12 +812,13 @@ const loadProject = async () => {
       // Hydrate the sims list for the Project hub panel (non-fatal).
       loadProjectSimulations()
 
-      // 自动开始图谱构建
-      if (response.data.status === 'ontology_generated' && !response.data.graph_id) {
-        await startBuildGraph()
-      }
+      // Don't auto-trigger graph build when the user navigates here from
+      // the Home view. The Project hub is also a "view existing project"
+      // surface; auto-starting an LLM-heavy build is surprising. If the
+      // build was paused (status=ontology_generated, no graph_id), the
+      // user can resume it explicitly via the build button.
 
-      // 继续轮询构建中的任务
+      // 继续轮询构建中的任务（only when there's a live task to follow)
       if (response.data.status === 'graph_building' && response.data.graph_build_task_id) {
         currentPhase.value = 1
         startPollingTask(response.data.graph_build_task_id)

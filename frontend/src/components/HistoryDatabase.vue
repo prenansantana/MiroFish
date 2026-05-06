@@ -19,9 +19,9 @@
 
     <!-- 卡片容器（只在有项目时显示） -->
     <div v-if="projects.length > 0" class="cards-container" :class="{ expanded: isExpanded }" :style="containerStyle">
-      <div 
-        v-for="(project, index) in projects" 
-        :key="project.simulation_id"
+      <div
+        v-for="(project, index) in projects"
+        :key="project.project_id || project.simulation_id"
         class="project-card"
         :class="{ expanded: isExpanded, hovering: hoveringCard === index }"
         :style="getCardStyle(index)"
@@ -29,9 +29,9 @@
         @mouseleave="hoveringCard = null"
         @click="navigateToProject(project)"
       >
-        <!-- 卡片头部：simulation_id 和 功能可用状态 -->
+        <!-- 卡片头部：project_id 和 功能可用状态 -->
         <div class="card-header">
-          <span class="card-id">{{ formatSimulationId(project.simulation_id) }}</span>
+          <span class="card-id">{{ formatProjectId(project.project_id) }}</span>
           <div class="card-status-icons">
             <span 
               class="status-icon" 
@@ -90,7 +90,13 @@
             <span class="card-time">{{ formatTime(project.created_at) }}</span>
           </div>
           <span class="card-progress" :class="getProgressClass(project)">
-            <span class="status-dot">●</span> {{ formatRounds(project) }}
+            <span class="status-dot">●</span>
+            <template v-if="project.simulation_count > 0">
+              {{ project.simulation_count }} {{ project.simulation_count === 1 ? $t('history.simulationCountSingular') : $t('history.simulationCountPlural') }}
+            </template>
+            <template v-else>
+              {{ formatRounds(project) }}
+            </template>
           </span>
         </div>
         
@@ -195,6 +201,7 @@ import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick } f
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getSimulationHistory } from '../api/simulation'
+import { listProjects, listProjectSimulations } from '../api/graph'
 
 const router = useRouter()
 const route = useRoute()
@@ -393,9 +400,25 @@ const truncateFilename = (filename, maxLength) => {
   return truncatedName + ext
 }
 
-// 打开项目详情弹窗
-const navigateToProject = (simulation) => {
-  selectedProject.value = simulation
+// Click on a project card → go straight to the Project hub. The hub
+// already shows the list of simulations under the project plus an
+// edit/create flow, so the modal that used to gate this navigation
+// is now redundant for projects with simulations. Projects without a
+// project_id (legacy/in-flight upload) fall back to the modal.
+const navigateToProject = (project) => {
+  if (project?.project_id) {
+    router.push({
+      name: 'Process',
+      params: { projectId: project.project_id }
+    })
+    return
+  }
+  selectedProject.value = project
+}
+
+const formatProjectId = (projectId) => {
+  if (!projectId) return ''
+  return projectId.length > 14 ? projectId.slice(0, 14) + '...' : projectId
 }
 
 // 关闭弹窗
@@ -436,16 +459,49 @@ const goToReport = () => {
   }
 }
 
-// 加载历史项目
+// Load projects (one card per project) and hydrate each with its
+// simulation count + most-recent sim status so the card can render
+// the same shape the existing template expects.
 const loadHistory = async () => {
   try {
     loading.value = true
-    const response = await getSimulationHistory(20)
-    if (response.success) {
-      projects.value = response.data || []
+    const response = await listProjects(50)
+    if (!response?.success) {
+      projects.value = []
+      return
     }
+    const rawProjects = response.data || []
+
+    // Fan out sim lookups in parallel; each project gets:
+    //   - simulations[]: full list (for the modal)
+    //   - simulation_count: number for the card footer
+    //   - latest_simulation: most recent sim (for status badge)
+    //   - simulation_id: id of the latest sim (so existing modal
+    //     navigation buttons keep working unchanged)
+    const enriched = await Promise.all(rawProjects.map(async (p) => {
+      try {
+        const r = await listProjectSimulations(p.project_id)
+        const sims = (r?.data || []).slice().sort((a, b) =>
+          (b.created_at || '').localeCompare(a.created_at || '')
+        )
+        const latest = sims[0] || null
+        return {
+          ...p,
+          simulations: sims,
+          simulation_count: sims.length,
+          latest_simulation: latest,
+          simulation_id: latest?.simulation_id || null,
+          status: latest?.status || p.status,
+          current_round: latest?.current_round || 0,
+        }
+      } catch (e) {
+        return { ...p, simulations: [], simulation_count: 0 }
+      }
+    }))
+
+    projects.value = enriched
   } catch (error) {
-    console.error('加载历史项目失败:', error)
+    console.error('Failed to load projects:', error)
     projects.value = []
   } finally {
     loading.value = false
