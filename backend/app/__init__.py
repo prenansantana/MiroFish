@@ -42,6 +42,25 @@ def create_app(config_class=Config):
     # 启用CORS
     CORS(app, resources={r"/api/*": {"origins": "*"}})
     
+    # Pre-warm graphiti_core's lazy driver imports while we're still on the
+    # main thread. Without this, the first time a sim's memory updater
+    # thread tries to instantiate a Graphiti client it triggers an import
+    # of graphiti_core.driver.neo4j_driver from a worker thread; if any
+    # other thread is mid-import inside the same module tree, Python's
+    # _ModuleLock detects the circular wait and aborts with
+    # "deadlock detected by _ModuleLock". Eager-importing here means the
+    # module cache is fully primed by the time any thread asks for it.
+    if Config.MEMORY_BACKEND == 'graphiti':
+        try:
+            import graphiti_core  # noqa: F401
+            import graphiti_core.driver  # noqa: F401
+            import graphiti_core.driver.neo4j_driver  # noqa: F401
+            from graphiti_core import Graphiti  # noqa: F401
+            if should_log_startup:
+                logger.info("Pre-warmed graphiti_core driver imports")
+        except Exception as e:
+            logger.warning(f"graphiti_core pre-warm failed (non-fatal): {e}")
+
     # 注册模拟进程清理函数（确保服务器关闭时终止所有模拟进程）
     from .services.simulation_runner import SimulationRunner
     SimulationRunner.register_cleanup()

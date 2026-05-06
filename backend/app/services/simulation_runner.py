@@ -399,17 +399,60 @@ class SimulationRunner:
         cls._save_run_state(state)
         
         # 如果启用图谱记忆更新，创建更新器
+        # If the user opted into graph memory updates, treat creation failure
+        # as a hard error and abort /start. The previous behavior was to log
+        # the failure and continue silently — the sim would then run with
+        # no memory writes, the report would be shallow, and the user only
+        # discovered the silence by inspecting backend logs after the fact.
+        # That happened on 2026-05-06 when graphiti_core.driver.neo4j_driver
+        # hit a Python _ModuleLock deadlock at lazy-import time. The
+        # create_app() pre-warm now prevents that case, but if any other
+        # import-or-config error sneaks in we want to fail loud.
         if enable_graph_memory_update:
             if not graph_id:
                 raise ValueError("启用图谱记忆更新时必须提供 graph_id")
-            
-            try:
-                get_memory_updater_manager().create_updater(simulation_id, graph_id)
-                cls._graph_memory_enabled[simulation_id] = True
-                logger.info(f"已启用图谱记忆更新: simulation_id={simulation_id}, graph_id={graph_id}")
-            except Exception as e:
-                logger.error(f"创建图谱记忆更新器失败: {e}")
+
+            mgr = get_memory_updater_manager()
+            last_err = None
+            # Tiny retry: import-lock deadlocks are usually transient (the
+            # other thread finishes its import within a few ms). If pre-warm
+            # missed something, this gives us a second shot before giving up.
+            for attempt in range(2):
+                try:
+                    mgr.create_updater(simulation_id, graph_id)
+                    cls._graph_memory_enabled[simulation_id] = True
+                    logger.info(
+                        f"已启用图谱记忆更新: simulation_id={simulation_id}, "
+                        f"graph_id={graph_id}"
+                    )
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = e
+                    msg = str(e)
+                    is_module_deadlock = (
+                        '_ModuleLock' in msg or 'deadlock detected' in msg
+                    )
+                    if attempt == 0 and is_module_deadlock:
+                        logger.warning(
+                            f"Graph memory updater creation hit module "
+                            f"deadlock; retrying in 100ms (attempt 2/2)"
+                        )
+                        time.sleep(0.1)
+                        continue
+                    break
+            if last_err is not None:
+                # Clean state we just wrote so the sim isn't half-started
                 cls._graph_memory_enabled[simulation_id] = False
+                logger.error(f"创建图谱记忆更新器失败: {last_err}")
+                raise RuntimeError(
+                    f"Graph memory updater creation failed for "
+                    f"simulation_id={simulation_id}: {last_err}. "
+                    f"Aborting /start so the sim doesn't run blind to memory. "
+                    f"Re-try /start; if it persists, restart the backend "
+                    f"(the create_app() pre-warm reseats graphiti_core "
+                    f"imports)."
+                ) from last_err
         else:
             cls._graph_memory_enabled[simulation_id] = False
         
