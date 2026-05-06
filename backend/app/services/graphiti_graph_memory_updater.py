@@ -42,8 +42,11 @@ class GraphitiGraphMemoryUpdater:
 
     BATCH_SIZE = 5
     SEND_INTERVAL = 0.5
-    MAX_RETRIES = 3
-    RETRY_DELAY = 2
+    MAX_RETRIES = 3                  # generic errors: keep the original 3 attempts
+    RETRY_DELAY = 2                  # seconds, multiplied by attempt index
+    MAX_RATE_LIMIT_RETRIES = 10      # rate limit (429): retry up to 10 times
+    RATE_LIMIT_DEFAULT_BACKOFF_S = 60  # default wait if no retry-after info
+    RATE_LIMIT_BACKOFF_CAP_S = 120   # never wait longer than this per attempt
 
     PLATFORM_DISPLAY_NAMES = {
         'twitter': '世界1',
@@ -255,7 +258,18 @@ class GraphitiGraphMemoryUpdater:
         )
         ref_time = datetime.now(timezone.utc)
 
-        for attempt in range(self.MAX_RETRIES):
+        # Two independent retry budgets:
+        #   - generic_attempts:  errors that aren't rate-limit (network, neo4j,
+        #     timeouts) — fast linear backoff, hard cap MAX_RETRIES
+        #   - rate_limit_attempts:  Anthropic 429s — long backoff respecting
+        #     retry-after header, hard cap MAX_RATE_LIMIT_RETRIES
+        # Mixing them in one counter would either drop episodes too eagerly
+        # on rate limits, or hammer the API on transient failures.
+        generic_attempts = 0
+        rate_limit_attempts = 0
+        display_name = self._get_platform_display_name(platform)
+
+        while True:
             try:
                 self._runner.submit(
                     self._add_episode_async(
@@ -265,7 +279,6 @@ class GraphitiGraphMemoryUpdater:
                 )
                 self._total_sent += 1
                 self._total_items_sent += len(activities)
-                display_name = self._get_platform_display_name(platform)
                 logger.info(
                     f"Sent {len(activities)} {display_name} activities to "
                     f"Graphiti graph {self.graph_id}"
@@ -273,18 +286,81 @@ class GraphitiGraphMemoryUpdater:
                 logger.debug(f"Batch preview: {combined_text[:200]}...")
                 return
             except Exception as e:
-                if attempt < self.MAX_RETRIES - 1:
+                if self._is_rate_limit_error(e):
+                    rate_limit_attempts += 1
+                    if rate_limit_attempts >= self.MAX_RATE_LIMIT_RETRIES:
+                        logger.error(
+                            f"Graphiti batch send dropped after "
+                            f"{rate_limit_attempts} rate-limit retries: {e}"
+                        )
+                        self._failed_count += 1
+                        return
+                    wait_s = self._rate_limit_wait_seconds(e)
                     logger.warning(
-                        f"Graphiti batch send failed (attempt "
-                        f"{attempt + 1}/{self.MAX_RETRIES}): {e}"
+                        f"Anthropic rate limit on Graphiti batch "
+                        f"({len(activities)} {display_name} activities) — "
+                        f"waiting {wait_s}s before retry "
+                        f"({rate_limit_attempts}/{self.MAX_RATE_LIMIT_RETRIES})"
                     )
-                    time.sleep(self.RETRY_DELAY * (attempt + 1))
-                else:
+                    time.sleep(wait_s)
+                    continue
+
+                generic_attempts += 1
+                if generic_attempts >= self.MAX_RETRIES:
                     logger.error(
-                        f"Graphiti batch send failed after {self.MAX_RETRIES} "
+                        f"Graphiti batch send failed after {generic_attempts} "
                         f"attempts: {e}"
                     )
                     self._failed_count += 1
+                    return
+                logger.warning(
+                    f"Graphiti batch send failed (attempt "
+                    f"{generic_attempts}/{self.MAX_RETRIES}): {e}"
+                )
+                time.sleep(self.RETRY_DELAY * generic_attempts)
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """True for Anthropic-style rate-limit errors. Matches the SDK's
+        explicit 429 exceptions plus the textual marker that comes through
+        when the error is re-raised from a deeper layer (Graphiti wraps
+        SDK errors before we see them)."""
+        # Anthropic SDK's RateLimitError subclasses APIStatusError; checking
+        # status_code is the cleanest signal but the exception type may be
+        # opaque after Graphiti's wrappers. Fall back to substring match.
+        status = getattr(exc, 'status_code', None)
+        if status == 429:
+            return True
+        msg = str(exc).lower()
+        return ('rate_limit_error' in msg
+                or 'rate limit exceeded' in msg
+                or 'rate-limit' in msg
+                or '429' in msg)
+
+    def _rate_limit_wait_seconds(self, exc: Exception) -> int:
+        """Extract retry-after seconds from the response if present, otherwise
+        fall back to RATE_LIMIT_DEFAULT_BACKOFF_S. Capped at
+        RATE_LIMIT_BACKOFF_CAP_S so a misconfigured upstream can't park us
+        for hours."""
+        # Anthropic SDK exceptions expose response headers under .response
+        try:
+            resp = getattr(exc, 'response', None)
+            if resp is not None:
+                headers = getattr(resp, 'headers', None) or {}
+                # Common headers, order matters
+                for h in ('retry-after', 'x-ratelimit-reset',
+                          'anthropic-ratelimit-input-tokens-reset'):
+                    val = headers.get(h)
+                    if val is None:
+                        continue
+                    try:
+                        n = int(float(val))
+                        return max(1, min(n, self.RATE_LIMIT_BACKOFF_CAP_S))
+                    except (TypeError, ValueError):
+                        continue
+        except Exception:
+            pass
+        return self.RATE_LIMIT_DEFAULT_BACKOFF_S
 
     def _flush_remaining(self) -> None:
         while not self._activity_queue.empty():
