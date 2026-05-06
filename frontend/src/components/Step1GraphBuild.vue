@@ -154,17 +154,110 @@
             <span v-if="currentPhase >= 2" class="badge accent">{{ $t('step1.inProgress') }}</span>
           </div>
         </div>
-        
+
         <div class="card-content">
           <p class="api-note">POST /api/simulation/create</p>
           <p class="description">{{ $t('step1.buildCompleteDesc') }}</p>
-          <button 
-            class="action-btn" 
+          <button
+            class="action-btn"
             :disabled="currentPhase < 2 || creatingSimulation"
             @click="handleEnterEnvSetup"
           >
             <span v-if="creatingSimulation" class="spinner-sm"></span>
             {{ creatingSimulation ? $t('step1.creating') : $t('step1.enterEnvSetup') + ' ➝' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Project hub: requirement edit + simulations list. Visible once
+           the project is loaded (graph_completed or before). Lets users
+           run multiple scenarios on the same KG without rewriting the
+           project's requirement. -->
+      <div class="step-card" v-if="projectData?.project_id">
+        <div class="card-header">
+          <div class="step-info">
+            <span class="step-num">★</span>
+            <span class="step-title">{{ $t('project.requirementLabel') }}</span>
+          </div>
+          <div class="step-status">
+            <button
+              v-if="!editingRequirement"
+              class="badge ghost"
+              @click="startEditRequirement"
+            >{{ $t('project.editRequirement') }}</button>
+          </div>
+        </div>
+        <div class="card-content">
+          <p
+            v-if="!editingRequirement"
+            class="description requirement-display"
+          >{{ projectData.simulation_requirement || '-' }}</p>
+          <div v-else class="hub-edit-form">
+            <textarea
+              v-model="requirementDraft"
+              rows="6"
+              class="hub-textarea"
+              :placeholder="$t('project.requirementPlaceholder')"
+            ></textarea>
+            <div class="hub-actions">
+              <button class="btn-secondary" @click="cancelEditRequirement">{{ $t('common.cancel') }}</button>
+              <button class="btn-primary" :disabled="savingRequirement" @click="saveRequirement">
+                {{ savingRequirement ? $t('common.saving') : $t('common.save') }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card-content sims-section">
+          <div class="sims-header">
+            <span class="sims-title">{{ $t('project.simulationsTitle') }}</span>
+            <button class="badge ghost" @click="openNewSimModal" :disabled="!projectData.graph_id">
+              + {{ $t('project.newSimulation') }}
+            </button>
+          </div>
+          <div v-if="projectSims.length" class="sims-list">
+            <div
+              v-for="sim in projectSims"
+              :key="sim.simulation_id"
+              class="sim-row"
+              @click="openSim(sim.simulation_id)"
+            >
+              <div class="sim-row-top">
+                <span class="sim-id">{{ sim.simulation_id }}</span>
+                <span class="sim-status" :class="`status-${sim.status}`">{{ sim.status }}</span>
+              </div>
+              <div class="sim-row-meta">
+                <span v-if="sim.profiles_count">{{ sim.profiles_count }} agents</span>
+                <span v-if="sim.simulation_requirement">
+                  · {{ truncateText(sim.simulation_requirement, 60) }}
+                </span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="sims-empty">{{ $t('project.simulationsEmpty') }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- New simulation modal -->
+    <div v-if="showNewSimModal" class="hub-modal-backdrop" @click.self="closeNewSimModal">
+      <div class="hub-modal-card">
+        <h3 class="hub-modal-title">{{ $t('project.newSimulationTitle') }}</h3>
+        <p class="hub-modal-help">{{ $t('project.newSimulationHelp') }}</p>
+        <textarea
+          v-model="newSimRequirement"
+          rows="8"
+          class="hub-textarea"
+          :placeholder="$t('project.requirementPlaceholder')"
+        ></textarea>
+        <div class="hub-modal-options">
+          <label><input type="checkbox" v-model="newSimEnableReddit"> Reddit</label>
+          <label><input type="checkbox" v-model="newSimEnableTwitter"> Twitter</label>
+        </div>
+        <div class="hub-actions">
+          <button class="btn-secondary" @click="closeNewSimModal">{{ $t('common.cancel') }}</button>
+          <button class="btn-primary" :disabled="creatingNewSim" @click="confirmCreateSim">
+            {{ creatingNewSim ? $t('common.saving') : $t('project.createSimulation') }}
           </button>
         </div>
       </div>
@@ -191,6 +284,7 @@ import { computed, ref, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { createSimulation } from '../api/simulation'
+import { updateProject, listProjectSimulations, createSimulation as createSimulationGraph } from '../api/graph'
 
 const router = useRouter()
 const { t } = useI18n()
@@ -209,6 +303,116 @@ defineEmits(['next-step'])
 const selectedOntologyItem = ref(null)
 const logContent = ref(null)
 const creatingSimulation = ref(false)
+
+// Project hub state
+const editingRequirement = ref(false)
+const requirementDraft = ref('')
+const savingRequirement = ref(false)
+const projectSims = ref([])
+const showNewSimModal = ref(false)
+const newSimRequirement = ref('')
+const newSimEnableReddit = ref(true)
+const newSimEnableTwitter = ref(true)
+const creatingNewSim = ref(false)
+
+const truncateText = (s, n) => {
+  if (!s) return ''
+  return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+const startEditRequirement = () => {
+  requirementDraft.value = props.projectData?.simulation_requirement || ''
+  editingRequirement.value = true
+}
+
+const cancelEditRequirement = () => {
+  editingRequirement.value = false
+  requirementDraft.value = ''
+}
+
+const saveRequirement = async () => {
+  const pid = props.projectData?.project_id
+  if (!pid) return
+  savingRequirement.value = true
+  try {
+    const res = await updateProject(pid, {
+      simulation_requirement: requirementDraft.value,
+    })
+    if (res?.success && res.data) {
+      // Mutate the prop so the display updates immediately. The parent
+      // also holds projectData, so this stays in sync until the next
+      // getProject() refresh.
+      Object.assign(props.projectData, res.data)
+    }
+    editingRequirement.value = false
+  } catch (e) {
+    console.error('updateProject failed', e)
+    alert(e?.response?.data?.error || e.message || 'update failed')
+  } finally {
+    savingRequirement.value = false
+  }
+}
+
+const loadProjectSimulations = async () => {
+  const pid = props.projectData?.project_id
+  if (!pid) return
+  try {
+    const res = await listProjectSimulations(pid)
+    if (res?.success) projectSims.value = res.data || []
+  } catch (e) {
+    console.warn('listProjectSimulations failed (non-fatal)', e)
+  }
+}
+
+watch(() => props.projectData?.project_id, (pid) => {
+  if (pid) loadProjectSimulations()
+}, { immediate: true })
+
+const openSim = (simId) => {
+  router.push({ name: 'Simulation', params: { simulationId: simId } })
+}
+
+const openNewSimModal = () => {
+  newSimRequirement.value = props.projectData?.simulation_requirement || ''
+  newSimEnableReddit.value = true
+  newSimEnableTwitter.value = true
+  showNewSimModal.value = true
+}
+
+const closeNewSimModal = () => {
+  showNewSimModal.value = false
+}
+
+const confirmCreateSim = async () => {
+  const pid = props.projectData?.project_id
+  const gid = props.projectData?.graph_id
+  if (!pid || !gid) return
+  creatingNewSim.value = true
+  try {
+    const projectReq = (props.projectData.simulation_requirement || '').trim()
+    const draft = (newSimRequirement.value || '').trim()
+    const payload = {
+      project_id: pid,
+      graph_id: gid,
+      enable_reddit: newSimEnableReddit.value,
+      enable_twitter: newSimEnableTwitter.value,
+    }
+    // Only send override when it differs from the project default
+    if (draft && draft !== projectReq) {
+      payload.simulation_requirement = draft
+    }
+    const res = await createSimulationGraph(payload)
+    if (res?.success && res.data?.simulation_id) {
+      showNewSimModal.value = false
+      router.push({ name: 'Simulation', params: { simulationId: res.data.simulation_id } })
+    }
+  } catch (e) {
+    console.error('createSimulation failed', e)
+    alert(e?.response?.data?.error || e.message || 'create failed')
+  } finally {
+    creatingNewSim.value = false
+  }
+}
 
 // 进入环境搭建 - 创建 simulation 并跳转
 const handleEnterEnvSetup = async () => {
@@ -697,4 +901,126 @@ watch(() => props.systemLogs.length, () => {
   color: #CCC;
   word-break: break-all;
 }
+
+/* ====== Project hub additions ====== */
+.requirement-display {
+  white-space: pre-wrap;
+  background: #FAFAFA;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #444;
+}
+.hub-edit-form { display: flex; flex-direction: column; gap: 8px; }
+.hub-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border: 1px solid #DDD;
+  border-radius: 4px;
+  background: #FFF;
+  box-sizing: border-box;
+}
+.hub-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.btn-secondary, .btn-primary {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.btn-secondary { background: #FFF; border-color: #DDD; color: #333; }
+.btn-primary { background: #DAA520; border-color: #DAA520; color: #FFF; }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.badge.ghost {
+  background: transparent;
+  border: 1px solid currentColor;
+  color: #DAA520;
+  cursor: pointer;
+  padding: 2px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+}
+.badge.ghost:hover { background: #DAA520; color: #FFF; }
+.badge.ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.sims-section { border-top: 1px dashed #EAEAEA; padding-top: 12px; }
+.sims-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.sims-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.sims-list { display: flex; flex-direction: column; gap: 6px; }
+.sim-row {
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sim-row:hover { background: #FAFAFA; }
+.sim-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sim-id { font-family: monospace; font-size: 11px; color: #555; }
+.sim-status {
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+.sim-status.status-ready, .sim-status.status-completed { background: #E6F4EA; color: #137333; }
+.sim-status.status-running, .sim-status.status-preparing { background: #FFF8E1; color: #B8860B; }
+.sim-status.status-failed, .sim-status.status-stopped { background: #FCE8E6; color: #C5221F; }
+.sim-status.status-created { background: #F1F3F4; color: #5F6368; }
+.sim-row-meta {
+  font-size: 11px;
+  color: #777;
+  margin-top: 3px;
+}
+.sims-empty {
+  font-size: 12px;
+  color: #999;
+  padding: 8px 0;
+  text-align: center;
+}
+
+.hub-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.hub-modal-card {
+  background: #FFF;
+  border-radius: 8px;
+  padding: 24px;
+  width: 560px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.hub-modal-title { margin: 0; font-size: 16px; font-weight: 600; }
+.hub-modal-help { font-size: 13px; color: #666; margin: 0; }
+.hub-modal-options { display: flex; gap: 16px; font-size: 13px; }
 </style>
