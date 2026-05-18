@@ -418,6 +418,137 @@ Ordered by impact on a typical 162-entity, 10-round, 4-section run:
    take many search iterations per section; capping aggressively
    trades nuance for cost.
 
+### Empirical rounds-per-run sweet spot under Sonnet 4.6
+
+A second wave of measurements (May 7 2026) on a 96-agent KG under
+the project's default Anthropic tier (450k input-tokens/min) found
+a hard ceiling:
+
+| Rounds | Wall time   | Cost  | camel-oasis "rate limit exhausted" | Memory writes dropped | Outcome |
+|--------|-------------|-------|------------------------------------|-----------------------|---------|
+| 10     | ~9 min      | ~$13  | 0                                  | 0                     | Clean, no degradation |
+| 15     | ~30 min     | ~$30  | 18 agent decisions lost            | 0                     | Memory drained eventually; some agents missed rounds |
+| 20     | OOM at 14   | ~$20  | n/a                                | n/a                   | Runner subprocess killed by SIGKILL (memory pressure) |
+
+Two sources of throttling stack at scale:
+
+1. **Anthropic per-minute input-token cap.** With 96 agents emitting
+   per-round LLM decisions plus search, reranker, and memory-write
+   calls, the 450k/min budget saturates around round 12-13 of a
+   15-round run.
+2. **camel-oasis upstream retry** has only 3 attempts with ~1-5s
+   backoff — far too short for a per-minute window. It silently
+   drops the agent's action when the third attempt fails. The
+   downstream effect: rounds finish with fewer captured actions
+   than intended; reports built off those rounds are less rich.
+
+The Graphiti memory updater in this fork was hardened to handle
+this — see "Anthropic rate limit headers" below — but the camel-
+oasis side is upstream code and would need a wrapper to fully
+shield it.
+
+**Practical recommendation:** at this Anthropic tier with this fork's
+Sonnet-everywhere setup, cap simulations at **10 rounds** per run.
+Use the multi-scenario flow (Modelo A/B/C/D under the same project
+with `simulation_requirement` overrides) to get breadth instead of
+depth. The skip-profiles fast-path means each additional scenario
+is ~$13-15, not $40.
+
+### Anthropic rate-limit aware backoff in the Graphiti memory updater
+
+`_send_batch_activities` now splits retries into two budgets:
+generic errors (3 attempts, linear 2/4/6s) and rate-limit errors
+(up to 10 attempts, waiting per `retry-after` or `anthropic-ratelimit-
+input-tokens-reset` when present, 60s default otherwise, hard cap
+120s). Detection covers both shapes that surface in practice:
+
+- SDK exceptions with `status_code=429` and `response.headers`
+- Re-raised strings containing `rate_limit_error`, `rate limit
+  exceeded`, or `429` (used when graphiti-core wraps the error)
+
+Operator-facing log line so the parking is visible (not stuck):
+```
+WARNING Anthropic rate limit on Graphiti batch (5 reddit
+        activities) — waiting 60s before retry (1/10)
+```
+
+Measured on a 15-round run: 3 wait events, 0 batches dropped.
+
+### graphiti_core driver lazy-import deadlock
+
+Observed once: a 15-round sim ran to completion with zero memory
+writes because `GraphitiGraphMemoryUpdater.__init__` instantiated
+`Graphiti(...)` from a worker thread, which lazy-imported
+`graphiti_core.driver.neo4j_driver` while another thread was
+concurrently inside a related module. Python's `_ModuleLock`
+detected the circular wait and aborted with
+`deadlock detected by _ModuleLock('graphiti_core.driver.driver')`.
+
+The runner caught the exception, set `_graph_memory_enabled=False`,
+and ran the sim silently without persisting actions. The report
+generated afterward was based only on the original PDF-derived KG.
+
+Two-part fix:
+
+1. `create_app()` now eager-imports `graphiti_core`,
+   `graphiti_core.driver`, `graphiti_core.driver.neo4j_driver`, and
+   `Graphiti` when `MEMORY_BACKEND=graphiti`. Touching the modules
+   on the main thread primes `sys.modules` so the worker thread's
+   later use is a no-op import.
+2. `SimulationRunner.start_simulation` retries `create_updater`
+   once after 100ms when the exception mentions `_ModuleLock` /
+   `deadlock detected` (transient cases), and re-raises as
+   `RuntimeError` on persistent failure so /start returns HTTP 500
+   instead of letting the sim run blind to memory.
+
+The user opted into `enable_graph_memory_update`; failing loud is
+the right default.
+
+### Zombie state recovery
+
+Both `state.json` (preparing/running) and `run_state.json`
+(starting/running) can be left in a non-terminal status when the
+backend crashes, gets killed, or is reload-restarted by debug mode
+mid-flow. The UI then polls them as live, showing a permanent
+"0% / in progress" spinner with no recovery path other than
+editing files by hand.
+
+Two complementary cleanups:
+
+- `SimulationManager.cleanup_zombie_states()` runs on
+  `create_app()` — sweeps all simulation states, checks pid liveness
+  (signal-0 probe) for `running`, and rewrites stuck states to
+  `failed` with an explanatory error.
+- `SimulationRunner.start_simulation` repeats the pid liveness
+  check on the recorded `process_pid` for `run_state.json` shaped
+  zombies; if the pid is dead/absent it logs a warning, marks the
+  run failed, and proceeds with a fresh start instead of rejecting.
+
+### Per-sim simulation_requirement override
+
+`SimulationState` carries an optional `simulation_requirement`
+field; when present, `prepare_simulation` (config gen) and the
+`/report/generate` + `/report/chat` endpoints all prefer it over
+the project's value. This lets the same project run Modelo A/B/C/D
+scenarios on the same KG and skip-profiles fast-path without
+rewriting the project's stated requirement.
+
+API surface for the override:
+
+```http
+POST /api/simulation/create
+{
+  "project_id": "...",
+  "graph_id": "...",
+  "simulation_requirement": "...optional override..."
+}
+```
+
+The Project hub UI in Step1GraphBuild surfaces this via a "+ New
+simulation" modal pre-filled with the project's current value;
+the user edits it (or keeps it as-is) and the override is only
+sent when it differs from the project's default.
+
 ## Files of interest
 
 | File | Purpose |

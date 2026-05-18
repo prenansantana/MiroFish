@@ -99,13 +99,22 @@ def generate_report():
                 "error": t('api.missingGraphIdEnsure')
             }), 400
         
-        simulation_requirement = project.simulation_requirement
+        # Per-sim override (set at create_simulation time) wins over the
+        # project's default — same precedence used at prepare time
+        # (api/simulation.py). Without this, reports generated for sims
+        # that customized the requirement (e.g. running Modelo B/C/D
+        # against the same KG) silently fall back to the project's
+        # original question.
+        simulation_requirement = (
+            (state.simulation_requirement or "").strip()
+            or (project.simulation_requirement or "").strip()
+        )
         if not simulation_requirement:
             return jsonify({
                 "success": False,
                 "error": t('api.missingSimRequirement')
             }), 400
-        
+
         # 提前生成 report_id，以便立即返回给前端
         import uuid
         report_id = f"report_{uuid.uuid4().hex[:12]}"
@@ -539,8 +548,13 @@ def chat_with_report_agent():
                 "error": t('api.missingGraphId')
             }), 400
         
-        simulation_requirement = project.simulation_requirement or ""
-        
+        # Honor the per-sim override here too (chat endpoint of report
+        # agent). See note above the equivalent block for /generate.
+        simulation_requirement = (
+            (state.simulation_requirement or "").strip()
+            or (project.simulation_requirement or "").strip()
+        )
+
         # 创建Agent并进行对话
         agent = ReportAgent(
             graph_id=graph_id,

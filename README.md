@@ -44,10 +44,26 @@
 >   knowledge graph.
 > - **Operational hardening** — reentrancy guard on `/prepare`,
 >   incremental `state.json` so the UI doesn't show 0% while
->   profiles are being generated, zombie state cleanup at startup
->   (sims left in `preparing`/`running` after a crash get auto-
->   recovered to `failed`), defensive subprocess termination so the
->   simulation runner can't outlive its sim.
+>   profiles are being generated, zombie state cleanup on `state.json`
+>   AND `run_state.json` (sims left preparing/running after a crash
+>   get auto-recovered), defensive subprocess termination so the
+>   simulation runner can't outlive its sim, and per-minute-aware
+>   backoff on Anthropic 429s in the Graphiti memory updater
+>   (10 retries respecting `retry-after`/`anthropic-ratelimit-input-
+>   tokens-reset` headers).
+> - **Pre-warm graphiti_core driver imports** at app startup to
+>   avoid a Python `_ModuleLock` deadlock when the memory updater
+>   thread is the first to touch `graphiti_core.driver.neo4j_driver`.
+>   Memory updater creation now fails loud (HTTP 500) on persistent
+>   error instead of letting the sim run blind to memory.
+> - **Per-sim `simulation_requirement` override** — `SimulationState`
+>   carries an optional override; prepare, report-generate, and
+>   report-chat all prefer it over the project's default. Lets the
+>   same project run Modelo A/B/C/D scenarios on the same KG.
+> - **Project hub UI** (Step1GraphBuild) — Home view lists projects
+>   (not the previous flat sim list); inside a project users can
+>   edit the requirement inline and create new sims pre-filled with
+>   the project's current question, optionally overriding it.
 > - **Portuguese i18n** (pt-BR / pt-PT) for episode templates,
 >   InsightForge report headers, profile progress messages, and
 >   skip-profile reuse messages.

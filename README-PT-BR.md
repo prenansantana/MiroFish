@@ -44,10 +44,26 @@
 >   mesmo grafo.
 > - **Robustez operacional** — guard de reentrância em `/prepare`,
 >   `state.json` incremental para a UI não mostrar 0% durante a
->   geração de perfis, limpeza de estados zumbi no startup
->   (simulações deixadas em `preparing`/`running` após crash são
->   auto-recuperadas para `failed`), terminação defensiva do
->   subprocess do runner.
+>   geração de perfis, limpeza de estados zumbi no `state.json` E
+>   no `run_state.json` (simulações deixadas em `preparing`/`running`
+>   após crash são auto-recuperadas), terminação defensiva do
+>   subprocess do runner, e backoff per-minute-aware nos 429s da
+>   Anthropic no memory updater do Graphiti (10 retries respeitando
+>   `retry-after`/`anthropic-ratelimit-input-tokens-reset`).
+> - **Pre-warm dos imports do graphiti_core driver** no startup do
+>   app, pra evitar deadlock do `_ModuleLock` do Python quando a
+>   thread do memory updater é a primeira a tocar em
+>   `graphiti_core.driver.neo4j_driver`. Falha de criação do memory
+>   updater agora dá HTTP 500 em vez de deixar a sim rodar cega.
+> - **Override por sim do `simulation_requirement`** — o
+>   `SimulationState` carrega um override opcional; prepare,
+>   report-generate e report-chat preferem ele sobre o default do
+>   projeto. Permite rodar Modelos A/B/C/D sobre o mesmo KG.
+> - **Project hub na UI** (Step1GraphBuild) — Home agora lista
+>   projetos (antes era lista flat de sims); dentro do projeto dá
+>   pra editar o requirement inline e criar novas sims pré-
+>   preenchidas com a pergunta atual do projeto, opcionalmente
+>   sobrescrevendo.
 > - **Internacionalização PT-BR / PT-PT** dos templates de episódio,
 >   cabeçalhos do relatório InsightForge, mensagens de progresso de
 >   perfis e mensagens de reuso.
